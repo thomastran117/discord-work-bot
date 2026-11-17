@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Send a single Discord test message
+      - name: Send a sample Discord job card
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: npm run test:webhook
