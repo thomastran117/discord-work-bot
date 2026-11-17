@@ -1,0 +1,14 @@
+[
+  {
+    "id": "vansh-canada",
+    "enabled": false
+  },
+  {
+    "id": "grind-canada",
+    "enabled": false
+  },
+  {
+    "id": "intern-radar",
+    "enabled": false
+  }
+]

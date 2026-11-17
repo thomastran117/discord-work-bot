@@ -47,7 +47,15 @@ The separate CI workflow runs offline tests and a local bare-Git persistence tes
 
 SimplifyJobs is enabled by default. The adapter reads the public New-Grad-Positions repository's JSON list, not its rendered README. Attribution: [SimplifyJobs / Coder Quad](https://github.com/SimplifyJobs/New-Grad-Positions). Verify source terms and permission for your use before operating; disable with SIMPLIFY_ENABLED=false if necessary. Upstream schema and availability may change.
 
-Optional employer boards: edit config/boards.json (empty by default) with objects of the following form. Replace example board slugs with actual employer board identifiers; these examples are not real registrations.
+Eleven employer boards are configured by default in `config/boards.json`, bringing the default total to 15 including SimplifyJobs and the three direct employer career integrations below. Board identifiers were checked against employer posting pages or public API responses. The list is a watchlist, not a guarantee of current new-grad openings or permission to redistribute. Remove boards from the file if they are unsuitable or their terms do not permit use.
+
+| ATS | Employer watchlist |
+| --- | --- |
+| Greenhouse | Affirm, DoorDash Canada, Faire, Robinhood |
+| Ashby | Cerebras, Cohere, Wealthsimple, Zip |
+| Lever | Achievers, Apply Digital, Waabi |
+
+Add or remove employer boards in `config/boards.json` with objects of the following form. Replace example board slugs with actual employer board identifiers; these examples are not real registrations.
 
 ~~~json
 [
@@ -57,7 +65,35 @@ Optional employer boards: edit config/boards.json (empty by default) with object
 ]
 ~~~
 
-Official public endpoints: [Greenhouse](https://developers.greenhouse.io/job-board.html), [Lever](https://github.com/lever/postings-api), [Ashby](https://developers.ashbyhq.com/docs/public-job-posting-api). Only enable boards whose terms permit your use. No login bypass, browser automation, or private data access. Each board is a separate source, fetched sequentially with timeouts and bounded retries.
+Official public endpoints: [Greenhouse](https://developers.greenhouse.io/job-board.html), [Lever](https://github.com/lever/postings-api), [Ashby](https://developers.ashbyhq.com/docs/public-job-posting-api). Only enable boards whose terms permit your use. No login bypass, browser automation, or private data access. Each board is a separate source, fetched sequentially with timeouts and bounded retries. A source error does not prevent the other sources from being ingested.
+
+### Ciena, RBC and Nokia direct career pages
+
+Three further sources are enabled in `config/careers.json` (override the path with `CAREERS_PATH`):
+
+| Employer | Career interface |
+| --- | --- |
+| Ciena | [Workday Careers](https://ciena.wd5.myworkdayjobs.com/Careers) |
+| RBC | [Workday RBCGLOBAL1](https://rbc.wd3.myworkdayjobs.com/RBCGLOBAL1) ([RBC careers](https://jobs.rbc.com/ca/en)) |
+| Nokia | [Oracle Candidate Experience, Canada](https://jobs.nokia.com/en/sites/CX_1/jobs?location=Canada&locationId=300000000471544&locationLevel=country&mode=location) |
+
+Workday uses a read-only search POST, followed by GET details for technical roles in Canada or with multiple/unknown locations. Search keywords, pagination (10 pages per keyword), detail requests (36 per employer) and a per-employer network deadline are bounded; caps can miss postings. RBC's main external board is used, not a separate early-talent board. Nokia uses the public candidate site search's Canada location identifier and paginated requisition summaries; insufficient description/location metadata can cause matches to be missed. Workday and Nokia identifiers improve cross-source duplicate detection, but older stored URL identities may only be linked when the original source sees the same job again.
+
+These are browser-facing career services rather than guaranteed third-party integration contracts. The exact live JSON requests and RBC board coverage have not been confirmed end-to-end. Review employer terms before use, run preview, and disable an employer by setting enabled to false if blocked, unsupported or not permitted. No CAPTCHA, authentication or access-control bypass is implemented.
+
+### Optional Canadian curated feeds
+
+Three additional adapters read the upstream Markdown tables, not their rendered websites:
+
+| Feed ID | Public list |
+| --- | --- |
+| vansh-canada | [Vansh / New-Grad-2027 Canada](https://github.com/vanshb03/New-Grad-2027/blob/dev/Canada.md) |
+| grind-canada | [Grind Canadian new-grad SWE](https://github.com/grind-fyi/Software-NewGrad-Canada) |
+| intern-radar | [Intern Radar Canadian new-grad roles](https://github.com/Francklin9999/canada-internship/blob/master/NEW_GRAD.md) |
+
+They are disabled by default because the upstream lists or linked listings may have reuse restrictions. After checking permission, set the corresponding `enabled` property to true in `config/feeds.json` (override path with `FEEDS_PATH`). Vansh and Grind use intermediary links, so cross-source duplicates may escape exact URL matching; no redirect requests or downstream scraping are performed. Grind is rebuilt daily, so polling it every two hours does not make that source real-time. The Grind parser requires explicit early-career evidence in the title because the upstream feed can include other levels. Other curated entries still pass SWE, Canada and senior/intern exclusions. Markdown table changes can require adapter maintenance.
+
+A newly enabled source is seeded quietly on its first successful normal run (default `FIRST_RUN_MODE=seed`); other sources keep their existing state. Use preview to check counts first. Explicit backfill queues eligible seeded jobs and respects the existing notification cap. Do not delete the state branch.
 
 ## Behaviour and limitations
 
@@ -75,7 +111,7 @@ Official public endpoints: [Greenhouse](https://developers.greenhouse.io/job-boa
 ~~~text
 src/
   models/        Normalized job and source contracts
-  sources/       SimplifyJobs and employer ATS adapters
+  sources/       SimplifyJobs, employer ATS and curated Markdown adapters
   services/      Classification, term extraction, identity, Discord and orchestration
   repositories/  SQLite persistence
   utils/         HTTP and logging
@@ -86,8 +122,8 @@ test/            Offline unit/integration tests
 
 ## Environment
 
-See .env.example. POLL_INTERVAL_MINUTES defaults to 120. MAX_NOTIFICATIONS_PER_RUN defaults to 25. FIRST_RUN_MODE defaults to seed. Use npm run preview for a safe first check; use npm run once for a single real poll.
+See .env.example. BOARDS_PATH and FEEDS_PATH select employer and curated-feed configuration. POLL_INTERVAL_MINUTES defaults to 120. MAX_NOTIFICATIONS_PER_RUN defaults to 25. FIRST_RUN_MODE defaults to seed. Use npm run preview for a safe first check; use npm run once for a single real poll.
 
 ## Next steps
 
-Add additional Canadian-specific sources after verifying their schemas and terms, improve bilingual/location classification, enrich linked descriptions only where permitted, add source health alerts and closure reconciliation, and add static type checking.
+Add more employer sources (e.g. additional Workday tenants or other approved APIs) after verifying their schemas and terms, improve bilingual/location classification, enrich linked descriptions only where permitted, add source health alerts and closure reconciliation, and add static type checking.

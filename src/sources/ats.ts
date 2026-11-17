@@ -33,9 +33,21 @@ export function parseBoard(config: BoardConfig, payload: unknown): Job[] {
       requisitionKey: str(row.requisition_id) ? config.company.toLowerCase() + ":" + str(row.requisition_id) : undefined };
   });
   return jobs.filter(row => row.isListed !== false).map(row => {
-    const secondary = Array.isArray(row.secondaryLocations) ? row.secondaryLocations.map(location => str(record(location).location)) : [];
+    const ashbyLocation = (label: unknown, address: unknown) => {
+      const postal = record(record(address).postalAddress);
+      const country = str(postal.addressCountry);
+      const region = str(postal.addressRegion);
+      const city = str(postal.addressLocality);
+      if (/^(?:CA|CAN|Canada)$/i.test(country))
+        return [city || str(label), region, "Canada"].filter(Boolean).join(", ");
+      return str(label);
+    };
+    const secondary = Array.isArray(row.secondaryLocations) ? row.secondaryLocations.map(value => {
+      const location = record(value);
+      return ashbyLocation(location.location, location.address);
+    }) : [];
     return { ...base, externalId: str(row.id) || str(row.jobUrl), title: str(row.title),
-      locations: [str(row.location), ...secondary].filter(Boolean),
+      locations: [ashbyLocation(row.location, row.address), ...secondary].filter(Boolean),
       url: str(row.jobUrl) || str(row.applyUrl), description: plain(row.descriptionPlain || row.descriptionHtml),
       employmentType: str(row.employmentType), postedAt: iso(row.publishedAt) };
   });

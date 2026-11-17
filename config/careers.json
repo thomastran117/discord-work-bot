@@ -1,0 +1,14 @@
+[
+  {
+    "id": "ciena",
+    "enabled": true
+  },
+  {
+    "id": "rbc",
+    "enabled": true
+  },
+  {
+    "id": "nokia",
+    "enabled": true
+  }
+]

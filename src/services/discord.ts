@@ -19,6 +19,11 @@ const SOURCE_LABELS: Record<string, string> = {
   greenhouse: "Greenhouse",
   lever: "Lever",
   ashby: "Ashby",
+  workday: "Employer careers",
+  oracle: "Employer careers",
+  "vansh-canada": "Vansh New-Grad Canada",
+  "grind-canada": "Grind",
+  "intern-radar": "Intern Radar",
   preview: "Preview only"
 };
 
