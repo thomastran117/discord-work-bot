@@ -87,14 +87,17 @@ with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as db:
         snapshot.execute("PRAGMA journal_mode=DELETE").fetchall()
 PY
     verify_db "$snapshot"
+    index="$state_dir/jobs.json"
+    node "$(dirname "${BASH_SOURCE[0]}")/export-search.ts" "$snapshot" "$index"
     blob="$(git hash-object -w "$snapshot")"
-    tree="$(printf '100644 blob %s\tjobs.db\n' "$blob" | git mktree)"
+    index_blob="$(git hash-object -w "$index")"
+    tree="$(printf '100644 blob %s\tjobs.db\n100644 blob %s\tjobs.json\n' "$blob" "$index_blob" | git mktree)"
     parents=()
     if [[ "$base" != EMPTY ]]; then
       # Compare logical contents to avoid writing commits for no-op polls.
       previous="$state_dir/previous.db"
       git show "$base:jobs.db" > "$previous"
-      if python3 - "$previous" "$snapshot" <<'PY'
+      if git show "$base:jobs.json" > "$state_dir/previous.json" 2>/dev/null && cmp -s "$state_dir/previous.json" "$index" && python3 - "$previous" "$snapshot" <<'PY'
 import sqlite3
 import sys
 def dump(path):
