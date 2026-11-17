@@ -8,22 +8,62 @@ export function webhookUrl(input: string): URL {
       !/^\/api\/webhooks\/\d+\/[\w.-]+\/?$/.test(url.pathname))
     throw new Error("Invalid Discord webhook URL");
   url.searchParams.set("wait", "true");
+  // Incoming webhooks must explicitly opt in to non-interactive link buttons.
+  url.searchParams.set("with_components", "true");
   return url;
 }
 
+const ACCENT = 0x5865f2;
+const SOURCE_LABELS: Record<string, string> = {
+  simplify: "SimplifyJobs",
+  greenhouse: "Greenhouse",
+  lever: "Lever",
+  ashby: "Ashby",
+  preview: "Preview only"
+};
+
+function sourceLabel(source: string): string {
+  const provider = source.split(":")[0].toLowerCase();
+  return Object.hasOwn(SOURCE_LABELS, provider) ? SOURCE_LABELS[provider] : source;
+}
+
+// Locations are scraped text, not trusted Discord Markdown.
+function escapeMarkdown(value: string): string {
+  return value.replace(/[\\\x60*_~|<>\[\]()#]/g, "\\$&");
+}
+
 export function buildPayload(job: Job) {
+  const locations = [...new Set(job.locations.map(location => location.trim()).filter(Boolean))];
+  const locationText = locations.map(escapeMarkdown).join("\n");
+  const applyUrl = new URL(job.url);
+  if (!["https:", "http:"].includes(applyUrl.protocol) || applyUrl.username || applyUrl.password)
+    throw new Error("Invalid application URL");
+
   return {
     username: "Canada Job Bot",
     allowed_mentions: { parse: [] },
     embeds: [{
-      title: job.title.slice(0, 256), url: job.url, color: 0x57f287,
       author: { name: job.company.slice(0, 256) },
+      title: job.title.slice(0, 256),
+      url: job.url,
+      color: ACCENT,
       fields: [
-        { name: "Location", value: job.locations.join("\n").slice(0, 1024) || "Not specified", inline: true },
-        { name: "Start date", value: (job.startDate || "Not specified").slice(0, 1024), inline: true }
+        {
+          name: locations.length > 1 ? "📍 Locations" : "📍 Location",
+          value: locationText.slice(0, 1024) || "Not specified",
+          inline: false
+        }
       ],
-      footer: { text: ("Source: " + job.source).slice(0, 2048) }
-    }]
+      footer: { text: ("via " + sourceLabel(job.source)).slice(0, 2048) }
+    }],
+    // Discord link buttons are limited to 512-character URLs. Longer links
+    // remain accessible from the embed title without a redundant button.
+    ...(job.url.length <= 512 ? {
+      components: [{
+        type: 1,
+        components: [{ type: 2, style: 5, label: "View posting", url: job.url }]
+      }]
+    } : {})
   };
 }
 
@@ -33,9 +73,15 @@ export function publishJob(webhook: URL, job: Job, request = fetch): Promise<str
 
 export function testWebhook(webhook: URL, request = fetch): Promise<string> {
   return executeWebhook(webhook, {
-    username: "Canada Job Bot",
-    allowed_mentions: { parse: [] },
-    content: "Discord job bot webhook test: delivery is working. No job records were modified."
+    ...buildPayload({
+      source: "preview",
+      externalId: "preview-card",
+      company: "Example Technologies",
+      title: "Sample — Software Engineer, New Grad",
+      locations: ["Toronto, ON", "Waterloo, ON"],
+      url: "https://example.com/"
+    }),
+    content: "Discord job bot webhook test — sample card only (not a real vacancy). No job records were modified."
   }, request);
 }
 

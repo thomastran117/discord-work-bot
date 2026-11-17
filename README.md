@@ -17,7 +17,7 @@ npm run once
 npm start
 ~~~
 
-Preview performs real source GET requests but never sends messages or writes SQLite. The first normal run defaults to seeding existing eligible jobs silently, separately for each source. New jobs are sent on later polls. Set FIRST_RUN_MODE=publish **before the first normal run** to announce existing jobs instead. Changing it later does not replay seeded jobs; use `npm run backfill` to queue currently eligible seeded jobs without replaying sent jobs. Use `npm run test:webhook` to send one diagnostic message without scraping or modifying state. Notifications are capped at 25 per run by default. The service polls immediately, then every 120 minutes while running, skipping overlapping runs.
+Preview performs real source GET requests but never sends messages or writes SQLite. The first normal run defaults to seeding existing eligible jobs silently, separately for each source. New jobs are sent on later polls. Set FIRST_RUN_MODE=publish **before the first normal run** to announce existing jobs instead. Changing it later does not replay seeded jobs; use `npm run backfill` to queue currently eligible seeded jobs without replaying sent jobs. Use `npm run test:webhook` to send one clearly labelled sample job card without scraping or modifying state. Notifications are capped at 25 per run by default. The service polls immediately, then every 120 minutes while running, skipping overlapping runs.
 
 Docker: after creating .env, run `docker compose up --build -d`; inspect logs with `docker compose logs -f job-bot`. SQLite persists in a named volume. Run only one instance against each database/webhook. Set DATABASE_PATH to a location under /app/data for Docker persistence. No ports are exposed.
 
@@ -26,7 +26,7 @@ Docker: after creating .env, run `docker compose up --build -d`; inspect logs wi
 No VPS, Docker service or always-running process is needed. Merge the workflow into the default branch, then navigate to **Settings → Secrets and variables → Actions → New repository secret** and create `DISCORD_WEBHOOK_URL` with your Discord webhook. Never add the webhook to a repository variable or workflow file.
 
 1. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch. Select `preview` for a read-only live-source check.
-2. Select `test-webhook` to send one diagnostic message and confirm that the webhook targets the expected channel. This does not read or modify SQLite.
+2. Select `test-webhook` to send one clearly labelled sample card (not a real job) and confirm that the webhook targets the expected channel. This does not read or modify SQLite.
 3. Select `backfill` to queue and deliver currently eligible seeded jobs and newly discovered jobs. Already-sent jobs are not requeued. Delivery respects the per-run cap; remaining pending jobs are delivered on subsequent normal polls.
 4. Select `poll` for normal delivery; the first normal poll seeds existing jobs by default.
 5. The scheduled workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). GitHub can delay scheduled jobs; exact two-hour delivery is not guaranteed.
@@ -61,7 +61,7 @@ Official public endpoints: [Greenhouse](https://developers.greenhouse.io/job-boa
 
 ## Behaviour and limitations
 
-- Discord embeds show title (clickable application link), employer, Canadian locations, starting term and source. Missing start dates show "Not specified"; posting and graduation dates are not treated as start dates.
+- Discord job cards use a blue accent, prominent employer and clickable job title, a full-width Canadian location field, a friendly source footer and a native View posting link button. Very long application URLs use the clickable title only. Start dates are intentionally omitted from cards; existing start-date metadata remains available internally and in dry-run logs.
 - Canadian locations and early-career SWE roles are identified by conservative rules. Generic remote jobs, internships/co-ops and senior titles are excluded. City-only ambiguity and false negatives remain possible.
 - Simplify has no full descriptions by default, so term extraction is limited to its title and any explicit structured date. Employer-board descriptions improve coverage. Date extraction is heuristic.
 - SQLite stores pending, seeded and sent jobs; source IDs, canonical URLs and known ATS URL identities prevent many duplicates. Different employer URLs for the same role may still duplicate. No fuzzy deduplication or closed-role reconciliation in v0.1.

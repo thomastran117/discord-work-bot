@@ -74,8 +74,19 @@ test("SQLite persists deduplication and per-source initial seeding", () => {
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 test("webhook payload includes required fields and disables mentions", async () => {
-  const payload = buildPayload(job);
-  assert.equal(payload.embeds[0].fields[1].value, "Not specified");
+  const payload = buildPayload({ ...job, startDate: "September 2027" });
+  const embed = payload.embeds[0];
+  assert.equal(embed.author.name, job.company);
+  assert.equal(embed.title, job.title);
+  assert.equal(embed.url, job.url);
+  assert.equal(embed.color, 0x5865f2);
+  assert.deepEqual(embed.fields, [{ name: "📍 Location", value: "Toronto, ON", inline: false }]);
+  assert.equal(embed.footer.text, "via alpha");
+  assert.equal(JSON.stringify(payload).includes("September 2027"), false);
+  assert.deepEqual(payload.components, [{ type: 1, components: [{ type: 2, style: 5, label: "View posting", url: job.url }] }]);
+  const url = webhookUrl("https://discord.com/api/webhooks/1/test-token");
+  assert.equal(url.searchParams.get("wait"), "true");
+  assert.equal(url.searchParams.get("with_components"), "true");
   assert.deepEqual(payload.allowed_mentions.parse, []);
   assert.throws(() => webhookUrl("https://example.com/api/webhooks/1/token"));
   const request = async (_url: URL | RequestInfo, init?: RequestInit) => {
@@ -142,10 +153,27 @@ test("webhook test sends one harmless message and reports safe API errors", asyn
   const request = async (_url: URL | RequestInfo, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     assert.match(body.content, /webhook test/);
+    assert.match(body.content, /not a real vacancy/);
+    assert.equal(body.embeds[0].title, "Sample — Software Engineer, New Grad");
+    assert.equal(body.components[0].components[0].url, "https://example.com/");
     assert.deepEqual(body.allowed_mentions.parse, []);
     return Response.json({ id: "43" });
   };
   assert.equal(await testWebhook(webhook, request as typeof fetch), "43");
   await assert.rejects(testWebhook(webhook, (async () =>
     Response.json({ code: 10015, message: "Unknown Webhook" }, { status: 404 })) as typeof fetch), /Discord HTTP 404 \(API code 10015\)/);
+});
+
+test("Discord card handles missing and multiple locations and friendly source labels", () => {
+  const multi = buildPayload({ ...job, source: "greenhouse:example", locations: [" Toronto, ON ", "Waterloo, ON", "Toronto, ON"] });
+  assert.deepEqual(multi.embeds[0].fields, [{ name: "📍 Locations", value: "Toronto, ON\nWaterloo, ON", inline: false }]);
+  assert.equal(multi.embeds[0].footer.text, "via Greenhouse");
+  assert.equal(buildPayload({ ...job, source: "simplify" }).embeds[0].footer.text, "via SimplifyJobs");
+  assert.equal(buildPayload({ ...job, locations: [] }).embeds[0].fields[0].value, "Not specified");
+  assert.equal(buildPayload({ ...job, locations: ["x".repeat(2000)] }).embeds[0].fields[0].value.length, 1024);
+  const longUrl = "https://example.com/apply?job=" + "x".repeat(600);
+  const long = buildPayload({ ...job, url: longUrl });
+  assert.equal(long.components, undefined);
+  assert.equal(long.embeds[0].url, longUrl);
+  assert.throws(() => buildPayload({ ...job, url: "javascript:alert(1)" }), /Invalid application URL/);
 });
