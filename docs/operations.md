@@ -2,17 +2,35 @@
 
 [Back to README](../README.md)
 
-## GitHub Actions
+## Railway scheduled execution
 
-The recommended deployment is a GitHub-hosted runner. No server, bot token, paid database or personal access token is normally needed.
+Railway runs the existing one-shot poller using the same Git-backed SQLite snapshot as manual Actions. No volume, public domain, database service or inbound port is needed.
 
-1. Enable GitHub Actions on your repository; forks may require enabling scheduled workflows manually.
-2. In Discord, go to **Edit Channel → Integrations → Webhooks**, create a webhook and copy its URL.
-3. In GitHub, navigate to **Settings → Secrets and variables → Actions → New repository secret**, use the name `DISCORD_WEBHOOK_URL` and paste the URL as the secret value. Do not put it in an Actions variable.
-4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch.
-5. Select `poll` (default) for normal monitoring or `backfill` with a lookback of 1–30 days (default 7).
+1. Merge the migration on the default branch. Confirm any old scheduled Actions run has finished; the updated workflow is manual-only.
+2. In Railway, create a service from the GitHub repository and select the default branch. Use the existing Dockerfile from the repository root.
+3. In the service variables, set the following values (never commit credentials):
 
-The production workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). The exact local time changes with daylight saving time. GitHub can delay or drop scheduled runs; schedules run on the default branch. GitHub may disable scheduled workflows in inactive public repositories after 60 days. Check the Actions tab if polling stops.
+| Variable | Value |
+| --- | --- |
+| `DISCORD_WEBHOOK_URL` | Existing Discord channel webhook |
+| `GH_TOKEN` | Fine-grained GitHub personal access token for this repository only, Contents read/write; observe organization approval and expiry requirements |
+| `STATE_REPOSITORY` | Repository in owner/repo format (e.g. thomastran117x/discord-work-bot) |
+| `FIRST_RUN_MODE` | Optional; seed (default) or publish |
+| `MAX_NOTIFICATIONS_PER_RUN` | Optional; 25 by default |
+
+4. In service settings, set the start command to `bash scripts/run-job.sh poll`, Cron Schedule to `17 */2 * * *` (every two hours UTC), restart policy Never, and one replica. Do not configure a healthcheck or public domain. Enable automatic deployment from the default branch if desired; wait for CI when supported.
+5. Apply settings before starting the service. Trigger a run using Railway's Cron Runs control (or its supported CLI `railway cron run`) and verify logs show acquisition, restore, poll outcome, save and unlock. An empty poll is a successful warning, not an error. Inspect the existing bot-state branch and Discord channel.
+
+The container's ordinary Docker default is still the local long-running scheduler. The Railway start-command override is mandatory. The shared entrypoint bounds polling to 20 minutes, closes out state on ordinary failures, and exits. Railway may skip a scheduled execution if an earlier execution is still active. See [Railway cron documentation](https://docs.railway.com/cron-jobs).
+
+## GitHub Actions (manual fallback)
+
+1. Enable GitHub Actions.
+2. Create or reuse the same Discord webhook at **Edit Channel → Integrations → Webhooks**.
+3. Add `DISCORD_WEBHOOK_URL` in **Settings → Secrets and variables → Actions → New repository secret**.
+4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch and select poll or backfill (1–30 days, default 7).
+
+The workflow has no cron trigger. It uses its built-in repository token and the same shared entrypoint, snapshot and lock as Railway; a simultaneous run fails before polling rather than competing for delivery. Use matching first-run and notification-cap settings on both hosts. The independent CI workflow still runs tests.
 
 For a forum or media channel, append `?thread_id=<thread snowflake>` to the webhook URL stored in `DISCORD_WEBHOOK_URL`. Discord requires a thread destination for those channel types; without it, delivery is deferred with API error `220001` and jobs remain pending.
 
@@ -20,10 +38,10 @@ For a forum or media channel, append `?thread_id=<thread snowflake>` to the webh
 
 | Mode | Description |
 | --- | --- |
-| `poll` (default) | Normal incremental poll, also used by the schedule. The first successful poll seeds existing matches per source by default. |
+| `poll` (default) | Normal incremental poll, also used by Railway's schedule. The first successful poll seeds existing matches per source by default. |
 | `backfill` | Fetch current matches and queue unsent postings dated within the requested lookback. |
 
-Both modes run on the default branch and restore/save SQLite. Manual backfill accepts a whole number of days from 1 to 30 (default 7); scheduled and manual poll ignore this input. Both GitHub Actions and the CLI validate the bound. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs.
+Both manual modes run on the default branch and restore/save SQLite. Manual backfill accepts a whole number of days from 1 to 30 (default 7); Railway and manual poll ignore this input. Both GitHub Actions and the CLI validate the bound. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs.
 
 ### Backfill rules
 
@@ -76,7 +94,7 @@ The named volume `job-data` persists SQLite under `/app/data`. Keep `DATABASE_PA
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DISCORD_WEBHOOK_URL` | Required for delivery | Discord webhook secret |
-| `DATABASE_PATH` | `./data/jobs.db` | SQLite path; CI sets a temporary path |
+| `DATABASE_PATH` | `./data/jobs.db` | SQLite path; the shared hosted entrypoint uses a temporary path |
 | `POLL_INTERVAL_MINUTES` | `120` | Long-running poll interval, 1–1440 |
 | `FIRST_RUN_MODE` | `seed` | `seed` or `publish` |
 | `MAX_NOTIFICATIONS_PER_RUN` | `25` | Delivery cap, 1–500 |
@@ -99,11 +117,13 @@ All configured sources share one read-only HTTP client. Requests must use HTTPS 
 | Permanent HTTP errors, invalid JSON or incompatible schema | Fail without retry |
 | Redirect or oversized response | Reject immediately without following or retrying |
 
-An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Local preview reads saved cooldowns if a database is available but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle/SmartRecruiters two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
+An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later hosted runs. Local preview reads saved cooldowns if a database is available but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle/SmartRecruiters two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
 
 ## State and recovery
 
-GitHub runners are ephemeral. The workflow restores `jobs.db` from a dedicated `bot-state` branch, runs the one-shot bot, and saves a SQLite backup to that branch. It creates the branch on the first successful state save and skips committing unchanged logical state. The workflow grants the built-in `GITHUB_TOKEN` contents write access only for the production job. If a repository policy prevents writing, review the policy rather than committing a personal token.
+Both hosted runners are ephemeral. The shared wrapper creates a temporary Git repository, acquires the exclusive `bot-state-lock` branch, restores `jobs.db` from `bot-state`, runs the one-shot bot, saves a SQLite backup and the search index, then releases the lock. The original state branch is reused; no migration or reset is required. The wrapper saves after ordinary poll failures and skips unchanged snapshots. GitHub Actions uses its built-in contents-write token; Railway uses the scoped service secret. The poll subprocess does not inherit GH_TOKEN.
+
+**Lock recovery:** a failed state save or abrupt termination can leave `bot-state-lock` in place; it deliberately has no automatic expiry. Stop/disable scheduled execution temporarily, confirm no Railway or Actions run is active, review the failed job's delivery and save logs, and only then delete that lock branch (not bot-state) from GitHub. A crash before saving can lose confirmed notification state and cause duplicate delivery on the next run; verify the channel first. A failed state restore releases the acquired lock. A rejected lock acquisition performs no source calls or delivery; retry after the other run finishes.
 
 Do not delete, force-update or manually edit `bot-state`. If restore fails, the workflow aborts rather than silently resetting. Keep a backup if continuity matters. Deleting the branch resets deduplication; already-sent jobs may be published again if using backfill or publish mode.
 
@@ -134,3 +154,7 @@ Useful structured events: `poll_warning`, `poll_error`, `no_notifications`, `sou
 ### Observed deployment issue
 
 In [the Nov 17, 2026 production run](https://github.com/thomastran117/discord-work-bot/actions/runs/44024277333), 13 of 15 sources completed, 19 Discord notifications were delivered, and both Ciena and RBC returned HTTP 429. Nokia returned 70 postings but none passed the classifier. These are run-specific observations, not permanent source health or evidence that all eligible openings were found. Ciena and RBC remain configured; disable them in `config/careers.json` if the rate-limit problem persists.
+
+## Optional /ask service
+
+Deploy a separate always-running Railway service from the same Dockerfile with start command `npm run start:ask`, no cron, public HTTPS networking, and healthcheck `/health`. Do not reuse the poller's secrets. See [interactive search deployment](ask.md).

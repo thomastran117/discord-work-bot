@@ -1,29 +1,31 @@
 # Interactive search (/ask)
 
-The GitHub Actions poller remains the only writer. On save it exports the last 30 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
+Railway cron and manual GitHub Actions use the same exclusive writer lock. On save it exports the last 30 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
 
-## Deployment
+## Deployment on Railway
 
-1. Run the existing poll workflow on the default branch after merging. Confirm bot-state contains jobs.json. The index reflects the last saved data, not a live employer search.
-2. Create an application in the Discord Developer Portal. Copy its Application ID and Public Key, and create a bot token. Enable Guild Install with the applications.commands scope (and bot if required by your install configuration); install the app in your server. No privileged gateway intents or webhook changes are needed. Enable Developer Mode in Discord and copy your server ID.
-3. Sign in to Cloudflare and run the following from the repository root. For a fork, update JOBS_SNAPSHOT_URL in wrangler.toml to that public repository's bot-state/jobs.json URL. The Worker only accepts public raw.githubusercontent.com snapshot URLs.
+1. Run the Railway poller once or manually dispatch the poll workflow on the default branch after merging. Confirm bot-state contains jobs.json.
+2. In the Discord Developer Portal, use your existing application or create one, install it in your server with the applications.commands scope, and copy the Application ID, Public Key and server ID (Developer Mode). An existing app does not need reinstalling.
+3. In the same Railway project as the poller, add a second GitHub service from the same repository/default branch. Name it ask-service. Use the repository Dockerfile and override its start command with `npm run start:ask`. Leave Cron Schedule empty, keep one replica, disable Serverless/sleeping, and set restart policy On Failure or Always.
+4. Set these variables on ask-service only:
 
-~~~sh
-npx wrangler login
-npx wrangler deploy
-npx wrangler secret put DISCORD_PUBLIC_KEY
-npx wrangler secret put DISCORD_APPLICATION_ID
-npx wrangler secret put DISCORD_GUILD_ID
-~~~
+| Variable | Value |
+| --- | --- |
+| DISCORD_PUBLIC_KEY | Discord application public key (64 hex characters) |
+| DISCORD_APPLICATION_ID | Discord application ID |
+| DISCORD_GUILD_ID | Allowed Discord server ID |
+| JOBS_SNAPSHOT_URL | https://raw.githubusercontent.com/thomastran117x/discord-work-bot/bot-state/jobs.json |
 
-4. Set the Discord application's Interactions Endpoint URL to the deployed Worker HTTPS URL followed by /interactions. Discord verifies it with a signed PING. The public key must be configured before this step.
-5. Put DISCORD_APPLICATION_ID, DISCORD_GUILD_ID and DISCORD_BOT_TOKEN in your local untracked .env (never commit it), then run:
+Railway injects PORT; the server binds 0.0.0.0. Set the healthcheck path to /health, generate a public domain in Networking, and deploy. Verify HTTPS GET /health returns an OK response. Do not set GH_TOKEN, DISCORD_WEBHOOK_URL or DISCORD_BOT_TOKEN here. Do not configure a cron schedule on this service.
+
+5. In Discord's application General Information settings, replace the Interactions Endpoint URL with the Railway public HTTPS domain followed by /interactions. Discord sends a signed PING to validate it. If migrating an existing command, test /ask before deleting the old Cloudflare Worker; no re-registration is necessary if the application, guild and command options are unchanged.
+6. For first-time registration only, put DISCORD_APPLICATION_ID, DISCORD_GUILD_ID and DISCORD_BOT_TOKEN in your untracked local .env, then run:
 
 ~~~sh
 npm run register:ask
 ~~~
 
-The command is guild-scoped. The bot token is needed only for registration; do not put it in the Worker or GitHub Actions. The existing DISCORD_WEBHOOK_URL continues to deliver automatic notifications. Redeploy the Worker and re-register if command options change.
+For local endpoint development, add DISCORD_PUBLIC_KEY and JOBS_SNAPSHOT_URL to .env and run `npm run start:ask` (default port 8080). Discord needs a public HTTPS endpoint for real interactions. The ordinary unit tests do not require Discord credentials.
 
 ## Usage
 
@@ -46,7 +48,7 @@ Publication dates are used where available. Undated jobs are included by first d
 ## Operations and security
 
 - Discord signatures and timestamp freshness are verified before processing; only the configured guild can search. The command acknowledges immediately with a deferred private response, then edits it.
-- A one-minute in-memory snapshot cache and per-isolate request coalescing reduce raw GitHub requests. Invalid or unavailable indexes yield a clear error, not an empty result. The Worker has no write permissions and does not need the bot token.
+- A one-minute in-memory snapshot cache and per-service request coalescing reduce raw GitHub requests. Invalid or unavailable indexes yield a clear error, not an empty result. The ask service has no write permissions and does not need the bot token.
 - The snapshot is public, like the existing bot-state branch. Private repositories are not supported by this deployment. Search uses a bounded index, not a managed database. Git retains old snapshots in branch history.
 - If registration succeeds but no results appear, check the index and the poll logs; the first saved poll after merge creates the index. A new source may not have historical data. If Discord rejects the endpoint, verify the key and URL.
-- Cloudflare account, Discord application configuration, and deployment must be done by an operator. Worker platform quotas apply.
+- Railway and Discord configuration must be completed by an operator. The service remains running so hosting usage is continuous; Railway plan quotas apply. It acknowledges commands before fetching and bounds request bodies, concurrent deferred searches and upstream timeouts. Healthchecks test HTTP availability, not upstream index freshness.

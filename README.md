@@ -4,7 +4,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933)
 ![License](https://img.shields.io/github/license/thomastran117/discord-work-bot)
 
-A lightweight job aggregator that finds Canadian new-grad and early-career software engineering opportunities and posts them to a Discord channel. Runs every two hours on GitHub Actions, with no dedicated server or external database.
+A lightweight job aggregator that finds Canadian new-grad and early-career software engineering opportunities and posts them to a Discord channel. Runs every two hours as a Railway cron job, with manual polling/backfill in GitHub Actions and no dedicated database.
 
 ## Features
 
@@ -17,20 +17,24 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 
 ## Quick start
 
-### GitHub Actions (recommended)
+### Railway (recommended)
 
-1. Fork or use your own copy of this repository. Enable Actions if necessary.
-2. Create a Discord webhook via **Edit Channel → Integrations → Webhooks**.
-3. Add the webhook URL as the repository Actions secret `DISCORD_WEBHOOK_URL` under **Settings → Secrets and variables → Actions**.
-4. Open **Actions → Canadian new-grad job bot → Run workflow** on your default branch. Use `poll` (default) to start monitoring, or select `backfill` with `backfill_days` set to 1–30 (default 7).
+1. Merge the deployment changes and ensure no old scheduled Actions run is active.
+2. Create a Railway service connected to this repository and the default branch.
+3. Configure the service to use the Dockerfile, start command `bash scripts/run-job.sh poll`, cron schedule `17 */2 * * *` (UTC), one replica, and restart policy Never. Do not expose a port or add a healthcheck.
+4. Set Railway variables `DISCORD_WEBHOOK_URL`, `GH_TOKEN` (a fine-grained GitHub token with Contents read/write for this repository only), and `STATE_REPOSITORY` (owner/repo). See [deployment and operations](docs/operations.md) for details.
 
-Scheduled runs execute automatically every two hours (best effort). First normal polls seed existing listings by default; subsequent polls send new jobs. Backfill only queues recent dated postings that have not been sent.
+### GitHub Actions (manual fallback)
 
-> **Important:** In a public repository, the `bot-state` branch and workflow logs are public. Never commit webhook secrets or delete the state branch. Review source terms before enabling collection.
+Add `DISCORD_WEBHOOK_URL` as a repository Actions secret. Under **Actions → Canadian new-grad job bot → Run workflow**, select `poll` or `backfill` (1–30 days, default 7). Both execution hosts share the existing state and an exclusive lock. Do not run legacy workflow revisions that bypass the lock.
+
+First normal polls seed existing listings by default; subsequent polls send new jobs. Backfill queues recent dated postings not previously sent.
+
+> In a public repository, the `bot-state` branch and workflow logs are public. Never commit secrets or delete the state branch.
 
 ### Interactive search (optional)
 
-Deploy a lightweight Discord interaction endpoint and register `/ask` in your server. The scheduled poller stays on GitHub Actions; queries read a public, bounded job index without polling sources. See [the setup guide](docs/ask.md).
+Deploy a second, always-running Railway service for the Discord interaction endpoint and register `/ask` in your server. The scheduled poller runs on Railway; queries read the same public, bounded job index without polling sources. See [the setup guide](docs/ask.md).
 
 ### Local development
 

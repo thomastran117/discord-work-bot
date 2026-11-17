@@ -16,7 +16,8 @@ base_file="$state_dir/base-commit"
 # file:// remote and does not need a token. Never put the token in a URL.
 if [[ -n "${GH_TOKEN:-}" ]]; then
   auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-  echo "::add-mask::$auth"
+  # Actions consumes mask commands; other hosts would log the encoded secret.
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then echo "::add-mask::$auth"; fi
   export GIT_CONFIG_COUNT=1
   export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
   export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth"
@@ -37,7 +38,31 @@ with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
 PY
 }
 
+lock_ref="refs/heads/$branch-lock"
+lock_file="$state_dir/lock-commit"
+
 case "${1:-}" in
+  lock)
+    [[ ! -e "$lock_file" ]] || { echo "Local lock metadata already exists" >&2; exit 1; }
+    # A unique orphan commit is an ownership token; creation is atomic on the remote.
+    nonce="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+    empty_tree="$(git mktree </dev/null)"
+    owner="$(printf 'Job bot execution lock %s\n' "$nonce" | git -c user.name='discord-work-bot' -c user.email='bot@users.noreply.github.com' commit-tree "$empty_tree")"
+    if ! git push --force-with-lease="$lock_ref:" origin "$owner:$lock_ref"; then
+      echo "Could not acquire shared execution lock; another job may be active. No polling performed." >&2
+      exit 1
+    fi
+    printf '%s\n' "$owner" > "$lock_file"
+    echo "Acquired shared execution lock $owner"
+    ;;
+  unlock)
+    [[ -f "$lock_file" ]] || { echo "Missing local lock ownership" >&2; exit 1; }
+    owner="$(cat "$lock_file")"
+    # Delete only our own lock, never a replacement created by another runner.
+    git push --force-with-lease="$lock_ref:$owner" origin ":$lock_ref"
+    rm "$lock_file"
+    echo "Released shared execution lock"
+    ;;
   restore)
     if [[ -e "$DATABASE_PATH" || -e "$base_file" ]]; then
       echo "Refusing to overwrite existing local state" >&2
@@ -122,7 +147,7 @@ PY
     echo "Persisted job database to $branch at $commit"
     ;;
   *)
-    echo "Usage: $0 restore|save" >&2
+    echo "Usage: $0 lock|restore|save|unlock" >&2
     exit 2
     ;;
 esac

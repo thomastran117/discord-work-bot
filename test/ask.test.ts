@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {parseAsk,formatSearch,searchJobs,validSnapshot,askCommand} from "../src/services/ask.ts";
-import {verifyRequest} from "../src/interactions/worker.ts";
+import {verifyRequest} from "../src/interactions/handler.ts";
 const now=Date.parse("2026-11-17T12:00:00Z");
 const firstSeenAt="2026-11-16T12:00:00.000Z";
 const job=(company:string,locations:string[],postedAt?:string)=>({company,title:"Engineer",locations,url:"https://example.com/"+encodeURIComponent(company),firstSeenAt,postedAt});

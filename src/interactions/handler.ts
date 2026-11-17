@@ -1,30 +1,41 @@
 import { formatSearch, parseAsk, validSnapshot, ASK_HELP } from "../services/ask.ts";
 import type { SearchJob, SearchOptions } from "../services/ask.ts";
 
-interface Env { DISCORD_PUBLIC_KEY: string; DISCORD_APPLICATION_ID: string; DISCORD_GUILD_ID: string; JOBS_SNAPSHOT_URL: string }
-interface Context { waitUntil(task: Promise<unknown>): void }
+export interface Env { DISCORD_PUBLIC_KEY: string; DISCORD_APPLICATION_ID: string; DISCORD_GUILD_ID: string; JOBS_SNAPSHOT_URL: string }
+type Defer = (task: () => Promise<void>) => void;
 interface Interaction { type: number; application_id?: string; guild_id?: string; token?: string; data?: {name?:string;options?: {name:string;value:unknown}[]} }
-const encoder = new TextEncoder();
 const EPHEMERAL = 64;
 function hex(value: string, length: number): Uint8Array {
   if (value.length !== length*2 || !/^[0-9a-f]+$/i.test(value)) throw new Error("Invalid hex");
   return Uint8Array.from(value.match(/../g)!, byte => parseInt(byte,16));
 }
-export async function verifyRequest(key: string, signature: string, timestamp: string, body: string, now = Date.now()): Promise<boolean> {
+export async function verifyRequest(key: string, signature: string, timestamp: string, body: string | Uint8Array, now = Date.now()): Promise<boolean> {
   try {
     if (!/^\d{10}$/.test(timestamp) || Math.abs(now - Number(timestamp)*1000) > 300000) return false;
     const publicKey = await crypto.subtle.importKey("raw",hex(key,32),"Ed25519",false,["verify"]);
-    return await crypto.subtle.verify("Ed25519",publicKey,hex(signature,64),encoder.encode(timestamp+body));
+    return await crypto.subtle.verify("Ed25519",publicKey,hex(signature,64),Buffer.concat([Buffer.from(timestamp), typeof body === "string" ? Buffer.from(body) : body]));
   } catch { return false; }
 }
+export const MAX_BODY_BYTES = 65536;
+const snapshotPattern = /^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/bot-state\/jobs\.json$/;
+export function askEnv(env: NodeJS.ProcessEnv): Env {
+  const { DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID, DISCORD_GUILD_ID, JOBS_SNAPSHOT_URL } = env;
+  if (!DISCORD_PUBLIC_KEY || !/^[a-f0-9]{64}$/i.test(DISCORD_PUBLIC_KEY) ||
+      !DISCORD_APPLICATION_ID || !/^\d{1,20}$/.test(DISCORD_APPLICATION_ID) ||
+      !DISCORD_GUILD_ID || !/^\d{1,20}$/.test(DISCORD_GUILD_ID) ||
+      !JOBS_SNAPSHOT_URL || !snapshotPattern.test(JOBS_SNAPSHOT_URL))
+    throw new Error("Configure DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID, DISCORD_GUILD_ID and JOBS_SNAPSHOT_URL");
+  return {DISCORD_PUBLIC_KEY,DISCORD_APPLICATION_ID,DISCORD_GUILD_ID,JOBS_SNAPSHOT_URL};
+}
+export function createInteractionHandler(env: Env, fetcher: typeof fetch = fetch) {
 let cached: {url:string; expires:number; jobs:SearchJob[]} | undefined;
 let inflight: {url:string; promise:Promise<SearchJob[]>} | undefined;
 async function snapshot(url: string): Promise<SearchJob[]> {
-  if (!/^https:\/\/raw\.githubusercontent\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/bot-state\/jobs\.json$/.test(url)) throw new Error("Invalid snapshot URL");
+  if (!snapshotPattern.test(url)) throw new Error("Invalid snapshot URL");
   if (cached?.url === url && cached.expires > Date.now()) return cached.jobs;
   if (inflight?.url === url) return inflight.promise;
   const promise = (async () => {
-    const response = await fetch(url, {signal:AbortSignal.timeout(10000),redirect:"error"});
+    const response = await fetcher(url, {signal:AbortSignal.timeout(10000),redirect:"error"});
     if (!response.ok) throw new Error("Snapshot unavailable");
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
@@ -53,23 +64,21 @@ async function complete(env: Env, token: string, query: ReturnType<typeof parseA
   catch { data = {content:"Job history is unavailable right now. Try again after the next polling run.",allowed_mentions:{parse:[]},embeds:[]}; }
   try {
     const url = "https://discord.com/api/v10/webhooks/"+env.DISCORD_APPLICATION_ID+"/"+encodeURIComponent(token)+"/messages/@original";
-    const response = await fetch(url,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(data),signal:AbortSignal.timeout(8000),redirect:"error"});
+    const response = await fetcher(url,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(data),signal:AbortSignal.timeout(8000),redirect:"error"});
     if (!response.ok) console.warn("ask_response_failed",response.status);
   } catch { console.warn("ask_response_failed"); }
 }
-export default {
-  async fetch(request: Request, env: Env, ctx: Context): Promise<Response> {
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/interactions") return new Response("Not found",{status:404});
-    const sig = request.headers.get("X-Signature-Ed25519"), stamp = request.headers.get("X-Signature-Timestamp");
-    if (!sig || !stamp || Number(request.headers.get("content-length")) > 65536) return new Response("Unauthorized",{status:401});
-    const body = await request.text();
-    if (body.length > 65536 || !await verifyRequest(env.DISCORD_PUBLIC_KEY,sig,stamp,body)) return new Response("Unauthorized",{status:401});
+return async function handle(body: Uint8Array, sig: string, stamp: string, defer: Defer): Promise<Response> {
+    if (body.byteLength > MAX_BODY_BYTES || !await verifyRequest(env.DISCORD_PUBLIC_KEY,sig,stamp,body)) return new Response("Unauthorized",{status:401});
     let interaction: Interaction;
-    try { interaction = JSON.parse(body); } catch { return new Response("Bad request",{status:400}); }
+    try {
+      interaction = JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(body));
+      if (!interaction || typeof interaction !== "object" || Array.isArray(interaction)) throw new Error("Invalid interaction");
+    } catch { return new Response("Bad request",{status:400}); }
     if (interaction.type === 1) return Response.json({type:1});
     if (interaction.type !== 2 || interaction.data?.name !== "ask") return reply(ASK_HELP);
     if (!/^\d+$/.test(env.DISCORD_APPLICATION_ID) || interaction.application_id !== env.DISCORD_APPLICATION_ID ||
-        !env.DISCORD_GUILD_ID || interaction.guild_id !== env.DISCORD_GUILD_ID || !interaction.token) return reply("This command is not available here.");
+        !env.DISCORD_GUILD_ID || interaction.guild_id !== env.DISCORD_GUILD_ID || typeof interaction.token !== "string" || !interaction.token || interaction.token.length > 512) return reply("This command is not available here.");
     let query;
     try {
       const options: SearchOptions = {};
@@ -87,7 +96,8 @@ export default {
       }
       query = parseAsk(options);
     } catch (error) { return reply(error instanceof Error ? error.message : ASK_HELP); }
-    ctx.waitUntil(complete(env,interaction.token,query));
+    const token = interaction.token;
+    defer(() => complete(env,token,query));
     return Response.json({type:5,data:{flags:EPHEMERAL}});
-  }
-};
+  };
+}
