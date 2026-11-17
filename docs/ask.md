@@ -1,10 +1,10 @@
 # Interactive search (/ask)
 
-The GitHub Actions poller remains the only writer. On save it exports the last 30 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
+Railway cron and manual GitHub Actions use the same exclusive writer lock. On save it exports the last 30 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
 
 ## Deployment
 
-1. Run the existing poll workflow on the default branch after merging. Confirm bot-state contains jobs.json. The index reflects the last saved data, not a live employer search.
+1. Run the Railway cron once or manually dispatch the poll workflow on the default branch after merging. Confirm bot-state contains jobs.json. The index reflects the last saved data, not a live employer search.
 2. Create an application in the Discord Developer Portal. Copy its Application ID and Public Key, and create a bot token. Enable Guild Install with the applications.commands scope (and bot if required by your install configuration); install the app in your server. No privileged gateway intents or webhook changes are needed. Enable Developer Mode in Discord and copy your server ID.
 3. Sign in to Cloudflare and run the following from the repository root. For a fork, update JOBS_SNAPSHOT_URL in wrangler.toml to that public repository's bot-state/jobs.json URL. The Worker only accepts public raw.githubusercontent.com snapshot URLs.
 

@@ -2,13 +2,13 @@
 
 [Back to README](../README.md)
 
-The application is a modular Node.js 24/TypeScript service with native fetch, node:sqlite and the Node test runner. It runs as a one-shot process in GitHub Actions or as a long-running local/Docker service. There is no dedicated HTTP server or Discord gateway connection.
+The application is a modular Node.js 24/TypeScript service with native fetch, node:sqlite and the Node test runner. It runs as a one-shot process on Railway cron or manual GitHub Actions, or as a long-running local/Docker service. There is no dedicated HTTP server or Discord gateway connection.
 
 ## Data flow
 
 ~~~mermaid
 flowchart TD
-    A[GitHub Actions or local scheduler] --> B[Load source configuration]
+    A[Railway cron, manual Actions or local scheduler] --> B[Load source configuration]
     B --> C[Fetch and normalize postings]
     C --> D[Filter Canadian early-career SWE roles]
     D --> E[Extract metadata]
@@ -18,7 +18,7 @@ flowchart TD
     H --> I[Read pending notification queue]
     I --> J[Publish Discord webhook card]
     J --> K[Record confirmed message ID]
-    K --> L[Close database and save state in Actions]
+    K --> L[Close database and save hosted state]
 ~~~
 
 The webhook-test mode skips this pipeline entirely and sends one fictional sample card.
@@ -38,7 +38,8 @@ The webhook-test mode skips this pipeline entirely and sends one fictional sampl
 | `src/services/discord.ts` | Webhook validation, embed construction and delivery |
 | `src/repositories/jobs.ts` | SQLite schema, transactions and notification queue |
 | `src/utils/` | HTTP retries, parsing helpers and structured JSON logs |
-| `scripts/workflow-state.sh` | Restore and save the Git-backed database snapshot |
+| `scripts/workflow-state.sh` | Lock, restore and save the Git-backed database snapshot |
+| `scripts/run-job.sh` | Shared exclusive one-shot execution for both hosted runners |
 | `test/` | Offline fixture, pipeline and workflow-state regression tests |
 
 ## Normalized model
@@ -77,7 +78,7 @@ An empty but successful source response can initialize that source. A failed sou
 
 Each poll fetches sources sequentially to limit load. Individual source failures are isolated. Empty queues and partial source failures emit warnings rather than failing the one-shot process; total source failure, delivery failure and database errors remain fatal. Source responses are restricted to 16 MiB and 25,000 raw rows, adapters may return at most 10,000 jobs, redirects are rejected, and normalized fields have explicit size and count limits. A shared source HTTP client paces requests per host, uses bounded exponential retry with jitter and honours Retry-After. Long waits or exhausted rate limits defer a host, with cooldown state saved to SQLite between production runs. See [operations](operations.md#source-retry-and-rate-limit-policy). The maximum number of pending jobs delivered per run is configurable. Discord uses `wait=true` to obtain a message ID before recording success; rate-limit responses and ambiguous network failures are deferred. Local payload validation failures and narrowly identified job-payload errors are quarantined so a single bad posting cannot block the queue. Destination, permission, webhook and thread-configuration errors remain pending and stop the pass so configuration fixes can recover delivery.
 
-GitHub Actions serializes runs and restores SQLite from `bot-state` before executing the one-shot command. A final save step runs even after ordinary partial failures, uses SQLite backup and integrity checking, and does not overwrite divergent state. A runner crash, cancellation or failed save can still lose confirmations. Discord and SQLite/Git cannot participate in one atomic transaction, so exactly-once delivery is not guaranteed.
+Railway and manual Actions acquire the same exclusive Git ref lock before restoring SQLite from `bot-state`. The shared wrapper saves even after ordinary partial failures, uses SQLite backup and integrity checking, and does not overwrite divergent state. It releases the lock only after a successful save (or before polling if restore fails); abrupt interruption or failed save may require operator recovery. See the operations guide. A runner crash, cancellation or failed save can still lose confirmations. Discord and SQLite/Git cannot participate in one atomic transaction, so exactly-once delivery is not guaranteed.
 
 ## Limitations and future work
 

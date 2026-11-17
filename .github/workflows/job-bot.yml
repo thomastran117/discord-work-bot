@@ -1,8 +1,6 @@
 name: Canadian new-grad job bot
 
 on:
-  schedule:
-    - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -27,13 +25,12 @@ concurrency:
 
 jobs:
   poll:
-    if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'poll' || inputs.mode == 'backfill')))
+    if: github.ref_name == github.event.repository.default_branch && (inputs.mode == 'poll' || inputs.mode == 'backfill')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
     env:
-      STATE_BRANCH: bot-state
       FIRST_RUN_MODE: ${{ vars.FIRST_RUN_MODE || 'seed' }}
       MAX_NOTIFICATIONS_PER_RUN: ${{ vars.MAX_NOTIFICATIONS_PER_RUN || '25' }}
     steps:
@@ -44,41 +41,10 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
-      - name: Validate requested operation
-        env:
-          RUN_MODE: ${{ inputs.mode || 'poll' }}
-          BACKFILL_DAYS: ${{ inputs.backfill_days }}
-        run: |
-          if [[ "$RUN_MODE" == backfill && ! "$BACKFILL_DAYS" =~ ^([1-9]|[12][0-9]|30)$ ]]; then
-            echo "::error::Backfill days must be a whole number from 1 to 30."
-            exit 1
-          fi
-      - name: Set database location
-        run: echo "DATABASE_PATH=$RUNNER_TEMP/discord-job-bot/jobs.db" >> "$GITHUB_ENV"
-      - name: Restore persistent state
-        id: restore
+      - name: Run shared job (manual)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/workflow-state.sh restore
-      - name: Fetch jobs and notify Discord
-        id: poll
-        timeout-minutes: 20
-        env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RUN_MODE: ${{ inputs.mode || 'poll' }}
+          RUN_MODE: ${{ inputs.mode }}
           BACKFILL_DAYS: ${{ inputs.backfill_days }}
-        run: |
-          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
-            echo "::error::Set the DISCORD_WEBHOOK_URL repository Actions secret."
-            exit 1
-          fi
-          if [[ "$RUN_MODE" == backfill ]]; then
-            npm run backfill -- "$BACKFILL_DAYS"
-          else
-            npm run once
-          fi
-      - name: Persist state even after a partial failure
-        if: always() && steps.restore.outcome == 'success' && steps.poll.outcome != 'skipped'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/workflow-state.sh save
+        run: bash scripts/run-job.sh "$RUN_MODE" "${BACKFILL_DAYS:-7}"

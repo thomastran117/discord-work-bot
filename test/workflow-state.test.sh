@@ -58,4 +58,33 @@ if bash "$root/scripts/workflow-state.sh" restore; then
   exit 1
 fi
 [[ ! -e "$DATABASE_PATH" ]]
-echo "Workflow state persistence tests passed."
+# Two independent hosts share the same remote lock.
+git remote set-url origin "$temp/remote.git"
+export DATABASE_PATH="$temp/lock-a/jobs.db"
+bash "$root/scripts/workflow-state.sh" lock
+owner="$(git ls-remote origin refs/heads/bot-state-lock | cut -f1)"
+[[ -n "$owner" ]]
+export DATABASE_PATH="$temp/lock-b/jobs.db"
+if bash "$root/scripts/workflow-state.sh" lock; then
+    echo "Expected second host to be excluded" >&2
+    exit 1
+fi
+[[ "$(git ls-remote origin refs/heads/bot-state-lock | cut -f1)" == "$owner" ]]
+export DATABASE_PATH="$temp/lock-a/jobs.db"
+bash "$root/scripts/workflow-state.sh" unlock
+export DATABASE_PATH="$temp/lock-b/jobs.db"
+bash "$root/scripts/workflow-state.sh" lock
+replacement="$(git ls-remote origin refs/heads/bot-state-lock | cut -f1)"
+[[ "$replacement" != "$owner" ]]
+# A stale owner's cleanup must not remove a new owner's lock.
+printf '%s\n' "$owner" > "$temp/lock-a/lock-commit"
+export DATABASE_PATH="$temp/lock-a/jobs.db"
+if bash "$root/scripts/workflow-state.sh" unlock; then
+    echo "Expected stale owner's unlock to fail" >&2
+    exit 1
+fi
+[[ "$(git ls-remote origin refs/heads/bot-state-lock | cut -f1)" == "$replacement" ]]
+export DATABASE_PATH="$temp/lock-b/jobs.db"
+bash "$root/scripts/workflow-state.sh" unlock
+[[ -z "$(git ls-remote origin refs/heads/bot-state-lock)" ]]
+echo "Workflow state persistence and shared lock tests passed."
