@@ -1,0 +1,48 @@
+import { loadConfig } from "./config.ts";
+import { JobsRepository } from "./repositories/jobs.ts";
+import { simplifySource } from "./sources/simplify.ts";
+import { atsSource } from "./sources/ats.ts";
+import { runAggregation } from "./services/aggregator.ts";
+import { publishJob, webhookUrl } from "./services/discord.ts";
+import { log } from "./utils/logger.ts";
+
+async function main() {
+  const dryRun = process.argv.includes("--dry-run");
+  const once = dryRun || process.argv.includes("--once");
+  const config = loadConfig();
+  const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl)] : []), ...config.boards.map(atsSource)];
+  if (!sources.length) throw new Error("No job sources configured");
+  if (new Set(sources.map(source => source.name)).size !== sources.length) throw new Error("Duplicate source configuration");
+  if (!dryRun && !config.webhook) throw new Error("DISCORD_WEBHOOK_URL is required (or use npm run preview)");
+  const webhook = dryRun ? undefined : webhookUrl(config.webhook!);
+  const repository = dryRun ? undefined : new JobsRepository(config.databasePath);
+  const options = { repository, publish: webhook ? (job: Parameters<typeof publishJob>[1]) => publishJob(webhook, job) : undefined,
+    dryRun, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst };
+  if (once) {
+    try {
+      const result = await runAggregation(sources, options);
+      if (result.failed || result.deliveryFailed) process.exitCode = 1;
+    } finally { repository?.close(); }
+    return;
+  }
+  let active: Promise<unknown> | undefined;
+  let stopping = false;
+  const tick = () => {
+    if (stopping || active) return;
+    active = runAggregation(sources, options).catch(() => log("error", "poll_failed")).finally(() => { active = undefined; });
+  };
+  const timer = setInterval(tick, config.intervalMs);
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(timer);
+    await active;
+    repository?.close();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+  log("info", "bot_started", { intervalMinutes: config.intervalMs / 60_000, sources: sources.map(s => s.name) });
+  tick();
+}
+
+main().catch(() => { log("error", "startup_failed", { hint: "Check environment, webhook format, boards file and database path" }); process.exitCode = 1; });

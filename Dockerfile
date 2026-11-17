@@ -1,0 +1,9 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --chown=node:node package.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node config ./config
+RUN mkdir -p /app/data && chown node:node /app/data
+USER node
+CMD ["node", "src/index.ts"]
