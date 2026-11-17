@@ -12,6 +12,12 @@ export const SOURCE_HTTP_POLICY = {
   workdayHostGapMs: 2_000
 } as const;
 
+export const SOURCE_DATA_LIMITS = {
+  responseBytes: 16 * 1024 * 1024,
+  rawRows: 25_000,
+  jobs: 10_000
+} as const;
+
 export interface CooldownStore {
   getCooldown(host: string): number;
   setCooldown(host: string, untilMs: number): void;
@@ -141,7 +147,10 @@ export class SourceHttpClient {
 
   private async read<T>(url: string, accept: string, consume: (response: Response) => Promise<T>,
                         jsonBody?: object, signal?: AbortSignal): Promise<T> {
-    const host = new URL(url).hostname.toLowerCase();
+    const target = new URL(url);
+    if (target.protocol !== "https:" || target.username || target.password)
+      throw new SourceHttpError("Invalid source URL");
+    const host = target.hostname.toLowerCase();
     const p = SOURCE_HTTP_POLICY;
     const request = this.options.request ?? fetch;
     for (let attempt = 0; attempt < p.attempts; attempt++) {
@@ -162,6 +171,7 @@ export class SourceHttpClient {
           headers: { Accept: accept, "User-Agent": "discord-work-bot/0.1",
             ...(jsonBody ? { "Content-Type": "application/json" } : {}) },
           ...(jsonBody ? { method: "POST", body: JSON.stringify(jsonBody) } : {}),
+          redirect: "manual",
           signal: requestSignal
         });
       } catch (error) {
@@ -170,10 +180,15 @@ export class SourceHttpClient {
         await this.retry(host, attempt, undefined, null, signal);
         continue;
       }
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel().catch(() => {});
+        throw new SourceHttpError("Source redirects are not allowed", response.status);
+      }
       if (response.ok) {
         try { return await consume(response); }
         catch (error) {
           this.checkDeadline(signal);
+          if (error instanceof SourceHttpError) throw error;
           // Invalid JSON/schema is not a transient network error.
           if (!isTransient(error)) throw new SourceHttpError("Invalid source response body");
           await this.retry(host, attempt, undefined, null, signal);
@@ -191,15 +206,40 @@ export class SourceHttpClient {
   }
 
   getJson(url: string, signal?: AbortSignal): Promise<unknown> {
-    return this.read(url, "application/json", response => response.json(), undefined, signal);
+    return this.read(url, "application/json", async response => JSON.parse(await limitedText(response)), undefined, signal);
   }
   getText(url: string, signal?: AbortSignal): Promise<string> {
-    return this.read(url, "text/plain, text/markdown;q=0.9", response => response.text(), undefined, signal);
+    return this.read(url, "text/plain, text/markdown;q=0.9", limitedText, undefined, signal);
   }
   // Workday's POST is a read-only search, never an application submission.
   postSearchJson(url: string, body: object, signal?: AbortSignal): Promise<unknown> {
-    return this.read(url, "application/json", response => response.json(), body, signal);
+    return this.read(url, "application/json", async response => JSON.parse(await limitedText(response)), body, signal);
   }
+}
+
+async function limitedText(response: Response): Promise<string> {
+  const maximum = SOURCE_DATA_LIMITS.responseBytes;
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maximum) {
+    await response.body?.cancel().catch(() => {});
+    throw new SourceHttpError("Source response is too large");
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > maximum) {
+      await reader.cancel().catch(() => {});
+      throw new SourceHttpError("Source response is too large");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 // Compatibility helpers for one-off requests. Runtime adapters receive the
@@ -227,6 +267,7 @@ export function strings(value: unknown): string[] {
 }
 export function rows(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) throw new Error("Unexpected source response: expected array");
+  if (value.length > SOURCE_DATA_LIMITS.rawRows) throw new Error("Unexpected source response: too many rows");
   return value.map(record);
 }
 export function iso(value: unknown, seconds = false): string | undefined {

@@ -3,7 +3,9 @@ import type { JobsRepository } from "../repositories/jobs.ts";
 import { eligible } from "./classifier.ts";
 import { extractStartDate } from "./enrichment.ts";
 import { normalizeJob, urlIdentity } from "./identity.ts";
+import { SOURCE_DATA_LIMITS } from "../utils/http.ts";
 import { log } from "../utils/logger.ts";
+import { PermanentDeliveryError } from "./delivery.ts";
 
 interface Options {
   repository?: JobsRepository;
@@ -15,20 +17,23 @@ interface Options {
 }
 
 export async function runAggregation(sources: JobSource[], options: Options) {
-  let failed = 0, delivered = 0, matched = 0;
+  let failed = 0, delivered = 0, rejected = 0, matched = 0;
   const previews = new Map<string, Job>();
   // Sequential reads keep load low; a failed source does not block others.
   for (const source of sources) {
     try {
       const raw = await source.fetchJobs();
+      if (!Array.isArray(raw) || raw.length > SOURCE_DATA_LIMITS.jobs)
+        throw new Error("Source returned too many jobs");
       const jobs: Job[] = [];
       let invalid = 0;
       for (const job of raw) {
         try {
-          if (!eligible(job)) continue;
+          const candidate = normalizeJob(job);
+          if (!eligible(candidate)) continue;
           // Extract the term before dropping description text. Only notification metadata
           // is persisted, including in the public bot-state branch on GitHub Actions.
-          const normalized = normalizeJob({ ...job, startDate: extractStartDate(job) });
+          const normalized = normalizeJob({ ...candidate, startDate: extractStartDate(candidate) });
           delete normalized.description;
           jobs.push(normalized);
         } catch { invalid++; }
@@ -59,11 +64,17 @@ export async function runAggregation(sources: JobSource[], options: Options) {
         delivered++;
         log("info", "notification_sent", { jobId: item.id, messageId: id });
       } catch (error) {
+        if (error instanceof PermanentDeliveryError) {
+          options.repository!.markRejected(item.id, error.message);
+          rejected++;
+          log("error", "notification_rejected", { jobId: item.id, error: error.message });
+          continue;
+        }
         log("error", "delivery_deferred", { error: error instanceof Error ? error.message : "Unknown error" });
-        return { failed, delivered, matched, deliveryFailed: true };
+        return { failed, delivered, rejected, matched, deliveryFailed: true };
       }
     }
   }
   log("info", "poll_complete", { failed, delivered, matched, sources: sources.length, ...(options.repository && !options.dryRun ? options.repository.counts() : {}) });
-  return { failed, delivered, matched, deliveryFailed: false };
+  return { failed, delivered, rejected, matched, deliveryFailed: false };
 }

@@ -15,7 +15,7 @@ The default configuration contains 15 sources: SimplifyJobs, 11 public ATS emplo
 | Workday | [Ciena](https://ciena.wd5.myworkdayjobs.com/Careers), [RBC](https://rbc.wd3.myworkdayjobs.com/RBCGLOBAL1) |
 | Oracle Recruiting Cloud | [Nokia](https://jobs.nokia.com/en/sites/CX_1/jobs) |
 
-SimplifyJobs is read from the upstream public JSON feed. The ATS integrations use public job-board endpoints, not browsing or login automation. Upstream schemas, job availability, and access policies can change.
+SimplifyJobs is read from the upstream public JSON feed. The ATS integrations use public job-board endpoints, not browsing or login automation. Source requests must use HTTPS and do not follow redirects. Upstream schemas, job availability, and access policies can change.
 
 ### Configure public ATS boards
 
@@ -67,7 +67,7 @@ These adapters are disabled by default. Enable only after reviewing the upstream
 ]
 ~~~
 
-The parser reads raw Markdown tables, recognizes closed listings and handles provider-specific link formats. Vansh and Grind use intermediary links, which may prevent cross-source URL deduplication. No redirects are resolved for enrichment. Grind is rebuilt daily; polling every two hours will not make it real-time. Its rows require explicit early-career title evidence rather than assuming every row is appropriate.
+The parser reads raw Markdown tables, recognizes closed listings and handles provider-specific link formats. Vansh and Grind use intermediary links, which may prevent cross-source URL deduplication. No redirects are resolved for enrichment. Application links must use HTTPS and their destination hostname is shown on each Discord card; this makes source provenance visible but does not guarantee that a third-party destination is trustworthy. Grind is rebuilt daily; polling every two hours will not make it real-time. Its rows require explicit early-career title evidence rather than assuming every row is appropriate.
 
 ## Matching policy
 
