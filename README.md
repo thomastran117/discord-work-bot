@@ -47,7 +47,7 @@ The separate CI workflow runs offline tests and a local bare-Git persistence tes
 
 SimplifyJobs is enabled by default. The adapter reads the public New-Grad-Positions repository's JSON list, not its rendered README. Attribution: [SimplifyJobs / Coder Quad](https://github.com/SimplifyJobs/New-Grad-Positions). Verify source terms and permission for your use before operating; disable with SIMPLIFY_ENABLED=false if necessary. Upstream schema and availability may change.
 
-Eleven employer boards are configured by default in `config/boards.json`, bringing the default total to 12 including SimplifyJobs. Board identifiers were checked against employer posting pages or public API responses. The list is a watchlist, not a guarantee of current new-grad openings or permission to redistribute. Remove boards from the file if they are unsuitable or their terms do not permit use.
+Eleven employer boards are configured by default in `config/boards.json`, bringing the default total to 15 including SimplifyJobs and the three direct employer career integrations below. Board identifiers were checked against employer posting pages or public API responses. The list is a watchlist, not a guarantee of current new-grad openings or permission to redistribute. Remove boards from the file if they are unsuitable or their terms do not permit use.
 
 | ATS | Employer watchlist |
 | --- | --- |
@@ -66,6 +66,20 @@ Add or remove employer boards in `config/boards.json` with objects of the follow
 ~~~
 
 Official public endpoints: [Greenhouse](https://developers.greenhouse.io/job-board.html), [Lever](https://github.com/lever/postings-api), [Ashby](https://developers.ashbyhq.com/docs/public-job-posting-api). Only enable boards whose terms permit your use. No login bypass, browser automation, or private data access. Each board is a separate source, fetched sequentially with timeouts and bounded retries. A source error does not prevent the other sources from being ingested.
+
+### Ciena, RBC and Nokia direct career pages
+
+Three further sources are enabled in `config/careers.json` (override the path with `CAREERS_PATH`):
+
+| Employer | Career interface |
+| --- | --- |
+| Ciena | [Workday Careers](https://ciena.wd5.myworkdayjobs.com/Careers) |
+| RBC | [Workday RBCGLOBAL1](https://rbc.wd3.myworkdayjobs.com/RBCGLOBAL1) ([RBC careers](https://jobs.rbc.com/ca/en)) |
+| Nokia | [Oracle Candidate Experience, Canada](https://jobs.nokia.com/en/sites/CX_1/jobs?location=Canada&locationId=300000000471544&locationLevel=country&mode=location) |
+
+Workday uses a read-only search POST, followed by GET details for technical roles in Canada or with multiple/unknown locations. Search keywords, pagination (10 pages per keyword), detail requests (36 per employer) and a per-employer network deadline are bounded; caps can miss postings. RBC's main external board is used, not a separate early-talent board. Nokia uses the public candidate site search's Canada location identifier and paginated requisition summaries; insufficient description/location metadata can cause matches to be missed. Workday and Nokia identifiers improve cross-source duplicate detection, but older stored URL identities may only be linked when the original source sees the same job again.
+
+These are browser-facing career services rather than guaranteed third-party integration contracts. The exact live JSON requests and RBC board coverage have not been confirmed end-to-end. Review employer terms before use, run preview, and disable an employer by setting enabled to false if blocked, unsupported or not permitted. No CAPTCHA, authentication or access-control bypass is implemented.
 
 ### Optional Canadian curated feeds
 
@@ -112,4 +126,4 @@ See .env.example. BOARDS_PATH and FEEDS_PATH select employer and curated-feed co
 
 ## Next steps
 
-Add more employer sources (e.g. Workday or other approved APIs) after verifying their schemas and terms, improve bilingual/location classification, enrich linked descriptions only where permitted, add source health alerts and closure reconciliation, and add static type checking.
+Add more employer sources (e.g. additional Workday tenants or other approved APIs) after verifying their schemas and terms, improve bilingual/location classification, enrich linked descriptions only where permitted, add source health alerts and closure reconciliation, and add static type checking.

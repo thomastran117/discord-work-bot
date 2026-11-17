@@ -8,5 +8,6 @@ services:
       - job-data:/app/data
       - ./config/boards.json:/app/config/boards.json:ro
       - ./config/feeds.json:/app/config/feeds.json:ro
+      - ./config/careers.json:/app/config/careers.json:ro
 volumes:
   job-data:

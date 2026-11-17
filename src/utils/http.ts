@@ -1,11 +1,12 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
-async function getResponse(url: string, accept: string, request: typeof fetch): Promise<Response> {
+async function getResponse(url: string, accept: string, request: typeof fetch, jsonBody?: object): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt++) {
     let response: Response;
     try {
       response = await request(url, {
-        headers: { Accept: accept, "User-Agent": "discord-work-bot/0.1" },
+        headers: { Accept: accept, "User-Agent": "discord-work-bot/0.1", ...(jsonBody ? { "Content-Type": "application/json" } : {}) },
+        ...(jsonBody ? { method: "POST", body: JSON.stringify(jsonBody) } : {}),
         signal: AbortSignal.timeout(20_000)
       });
     } catch {
@@ -31,6 +32,11 @@ async function getResponse(url: string, accept: string, request: typeof fetch): 
 
 export async function getJson(url: string, request = fetch): Promise<unknown> {
   return (await getResponse(url, "application/json", request)).json();
+}
+
+// Workday uses a read-only search POST, not an application submission.
+export async function postSearchJson(url: string, body: object, request = fetch): Promise<unknown> {
+  return (await getResponse(url, "application/json", request, body)).json();
 }
 
 export async function getText(url: string, request = fetch): Promise<string> {

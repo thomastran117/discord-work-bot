@@ -3,6 +3,8 @@ import type { BoardConfig } from "./models/job.ts";
 import { record, str } from "./utils/http.ts";
 import { FEEDS } from "./sources/curated.ts";
 import type { FeedId } from "./sources/curated.ts";
+import { CAREERS } from "./sources/careers.ts";
+import type { CareerId } from "./sources/careers.ts";
 
 function positiveInt(value: string | undefined, fallback: number, max: number): number {
   const number = Number(value ?? fallback);
@@ -35,9 +37,21 @@ export function loadConfig(env = process.env) {
     seen.add(id);
     if (row.enabled) feeds.push(id as FeedId);
   }
+  const careerRaw: unknown = JSON.parse(readFileSync(env.CAREERS_PATH || "./config/careers.json", "utf8"));
+  if (!Array.isArray(careerRaw)) throw new Error("Careers config must be an array");
+  const careerSeen = new Set<string>();
+  const careers: CareerId[] = [];
+  for (const entry of careerRaw) {
+    const row = record(entry);
+    const id = str(row.id);
+    if (!Object.hasOwn(CAREERS, id) || typeof row.enabled !== "boolean" || careerSeen.has(id))
+      throw new Error("Invalid or duplicate career configuration");
+    careerSeen.add(id);
+    if (row.enabled) careers.push(id as CareerId);
+  }
   const enabled = env.SIMPLIFY_ENABLED ?? "true";
   if (!["true", "false"].includes(enabled)) throw new Error("SIMPLIFY_ENABLED must be true or false");
-  return { boards, feeds, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
+  return { boards, feeds, careers, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
     databasePath: env.DATABASE_PATH || "./data/jobs.db", webhook: env.DISCORD_WEBHOOK_URL,
     intervalMs: positiveInt(env.POLL_INTERVAL_MINUTES, 120, 1440) * 60_000,
     maxNotifications: positiveInt(env.MAX_NOTIFICATIONS_PER_RUN, 25, 500), seedFirst: mode === "seed" };
