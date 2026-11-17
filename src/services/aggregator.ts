@@ -25,7 +25,11 @@ export async function runAggregation(sources: JobSource[], options: Options) {
       for (const job of raw) {
         try {
           if (!eligible(job)) continue;
-          jobs.push(normalizeJob({ ...job, startDate: extractStartDate(job) }));
+          // Extract the term before dropping description text. Only notification metadata
+          // is persisted, including in the public bot-state branch on GitHub Actions.
+          const normalized = normalizeJob({ ...job, startDate: extractStartDate(job) });
+          delete normalized.description;
+          jobs.push(normalized);
         } catch { invalid++; }
       }
       matched += jobs.length;
