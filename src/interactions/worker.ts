@@ -73,14 +73,17 @@ export default {
     let query;
     try {
       const options: SearchOptions = {};
+      const seen = new Set<string>();
       for (const option of interaction.data.options ?? []) {
+        if (seen.has(option.name)) throw new Error(ASK_HELP);
+        seen.add(option.name);
         if (option.name === "days" || option.name === "page") {
           if (typeof option.value !== "number") throw new Error("Invalid numeric option.");
           options[option.name] = option.value;
-        } else if (option.name === "company" || option.name === "location" || option.name === "question") {
+        } else if (option.name === "company" || option.name === "location") {
           if (typeof option.value !== "string") throw new Error("Invalid text option.");
           options[option.name] = option.value;
-        }
+        } else throw new Error(ASK_HELP);
       }
       query = parseAsk(options);
     } catch (error) { return reply(error instanceof Error ? error.message : ASK_HELP); }

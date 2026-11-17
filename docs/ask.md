@@ -29,14 +29,17 @@ The command is guild-scoped. The bot token is needed only for registration; do n
 
 | Command | Result |
 | --- | --- |
-| /ask question:Did RBC post in the last 3 days? | RBC matches in 3 days |
-| /ask question:Give me the postings from the past 7 days | All collected matches in 7 days |
-| /ask question:Find all Nokia postings in the max window | Nokia matches in 30 days |
-| /ask question:Find postings in Ottawa | Ottawa matches in 30 days |
+| /ask | All collected matches in 30 days |
+| /ask days:7 | All collected matches in 7 days |
+| /ask company:RBC days:3 | RBC matches in 3 days |
+| /ask company:Nokia | Nokia matches in 30 days |
+| /ask location:Ottawa | Ottawa matches in 30 days |
 | /ask company:Ciena location:Ottawa days:7 | Combined filters |
 | /ask company:SAP page:2 | Next page of the same search |
 
-Question mode supports the documented sentence patterns, not arbitrary natural language. Use structured filters for other combinations. Question and structured filters cannot be mixed, except page. Default is 30 rolling 24-hour days; allowed range 1–30. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the next page number to get all results. Case and accents are ignored; location matching is textual rather than geocoding. Some province and RBC aliases are supported.
+All four fields (company, location, days, page) are optional Discord slash-command options. Free-form questions are not accepted. Default is 30 rolling 24-hour days; allowed range 1–30. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the same filters and the next page number.
+
+Company and location are limited to 100 characters. Matching ignores case, accents and punctuation; direct partial matches and supported aliases take precedence. If no direct match exists for a field within the selected date range, the closest fuzzy matches are used (one edit for 4–7 characters, up to two for eight or more, including adjacent letter swaps). Short acronyms and province codes are matched directly, not fuzzily. Examples: Nokai → Nokia, Ottwa → Ottawa, Autodsk → Autodesk. Aliases include RBC / Royal Bank of Canada and Canadian province/territory abbreviations. Combined filters must both match; fuzzy matches are labelled in the response. Location matching is textual, not geocoding, and approximations can be ambiguous.
 
 Publication dates are used where available. Undated jobs are included by first discovery time and explicitly labelled first seen; these are not evidence of an employer publishing within the window. Historical collection can be incomplete, jobs can close, and the bot only stores eligible Canadian early-career SWE roles. No result means no recorded match, not proof that a company has not posted. Queries never scrape sources or publish notification cards.
 

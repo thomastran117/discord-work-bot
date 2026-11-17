@@ -5,70 +5,128 @@ export interface SearchJob {
   postedAt?: string; firstSeenAt: string;
 }
 export interface SearchOptions {
-  question?: string; company?: string; location?: string; days?: number; page?: number;
+  company?: string; location?: string; days?: number; page?: number;
 }
 export interface SearchQuery { company?: string; location?: string; days: number; page: number }
 export const PAGE_SIZE = 5;
-export const ASK_HELP = "Try: Did RBC post in the last 3 days? | Give me postings from the past 7 days | Find all Nokia postings | Find postings in Ottawa. Or use company, location and days filters.";
+export const ASK_HELP = "Use /ask with optional company, location, days (1–30) and page. Example: /ask company:Nokia location:Ottawa days:7.";
+const FILTER_MAX = 100;
 
 function clean(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length > 200 || !value.trim()) throw new Error("Invalid search text.");
+  if (typeof value !== "string" || value.length > FILTER_MAX || !folded(value)) throw new Error("Company and location must contain letters or numbers and be at most 100 characters.");
   return value.trim();
 }
 export function parseAsk(options: SearchOptions): SearchQuery {
-  let company = clean(options.company), location = clean(options.location), days = options.days;
-  const question = clean(options.question);
-  if (question) {
-    if (company || location || days !== undefined) throw new Error("Use either question or structured filters, not both.");
-    let q = question.replace(/[?!.]+$/, "").trim();
-    const window = q.match(/\s+(?:from\s+|in\s+|during\s+|over\s+|within\s+)?(?:the\s+)?(?:last|past)\s+(\d+)\s+days?$/i);
-    if (window) { days = Number(window[1]); q = q.slice(0, window.index).trim(); }
-    else q = q.replace(/\s+in\s+(?:the\s+)?(?:max(?:imum)?|full)\s+window$/i, "");
-    const did = q.match(/^(?:did|has|have)\s+(.+?)\s+(?:post(?:ed)?|publish(?:ed)?|list(?:ed)?)(?:\s+(?:any\s+)?(?:jobs|postings|roles))?$/i);
-    if (did) company = clean(did[1]);
-    else {
-      const list = q.match(/^(?:(?:give me|show me|find|list)\s+)?(?:all\s+)?(?:the\s+)?(?:(.+?)\s+)?(?:job\s+)?(?:postings?|jobs?|roles?)(?:\s+(?:in|at|from|for)\s+(.+))?$/i);
-      if (!list) throw new Error(ASK_HELP);
-      company = clean(list[1]); location = clean(list[2]);
-      if (location && /\s(?:at|from|for)\s/i.test(q)) { company = location; location = undefined; }
-    }
-  }
+  if (Object.keys(options).some(key => !["company","location","days","page"].includes(key)))
+    throw new Error(ASK_HELP);
+  const company = clean(options.company), location = clean(options.location);
+  let days = options.days;
   days ??= MAX_BACKFILL_DAYS;
   backfillWindow(days);
   const page = options.page ?? 1;
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new Error("Page must be a positive whole number (max 100000).");
   return { company, location, days, page };
 }
+// Normalization is shared by direct, alias and fuzzy matching.
 function folded(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().trim().replace(/\s+/g, " ");
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
-function matches(value: string, filter?: string): boolean {
-  if (!filter) return true;
-  const aliases: Record<string, string[]> = {
-    "rbc": ["royal bank of canada", "rbc"], "royal bank of canada": ["royal bank of canada", "rbc"],
-    "ontario": ["ontario", "on"], "quebec": ["quebec", "qc"], "british columbia": ["british columbia", "bc"]
-  };
-  const term = folded(filter), haystack = folded(value);
-  return (aliases[term] ?? [term]).some(alias => {
-    if (alias.length <= 3) return haystack.split(/[^\p{L}\p{N}]+/u).includes(alias);
-    return haystack.includes(alias);
-  });
+type Field = "company" | "location";
+const aliases: Record<Field, string[][]> = {
+  company: [["rbc","royal bank of canada"]],
+  location: [
+    ["on","ontario"], ["qc","quebec"], ["bc","british columbia"],
+    ["ab","alberta"], ["mb","manitoba"], ["sk","saskatchewan"],
+    ["ns","nova scotia"], ["nb","new brunswick"], ["nl","newfoundland and labrador"],
+    ["pe","prince edward island"], ["nt","northwest territories"], ["nu","nunavut"], ["yt","yukon"]
+  ]
+};
+function exactMatch(value: string, term: string): boolean {
+  if (term.length <= 3) return (" "+value+" ").includes(" "+term+" ");
+  return value.includes(term);
+}
+
+// Optimal string alignment (restricted Damerau-Levenshtein): adjacent
+// transpositions count as one edit. Only calculate the bounded diagonal.
+function distance(a: string, b: string, limit: number): number {
+  if (Math.abs(a.length-b.length) > limit) return limit+1;
+  const inf=limit+1;
+  let older: number[] = [], previous = Array.from({length:b.length+1},(_,i)=>Math.min(i,inf));
+  for (let i=1;i<=a.length;i++) {
+    const row=Array(b.length+1).fill(inf);
+    row[0]=Math.min(i,inf);
+    for (let j=Math.max(1,i-limit);j<=Math.min(b.length,i+limit);j++) {
+      row[j]=Math.min(previous[j]+1,row[j-1]+1,previous[j-1]+Number(a[i-1]!==b[j-1]));
+      if (i>1 && j>1 && a[i-1]===b[j-2] && a[i-2]===b[j-1])
+        row[j]=Math.min(row[j],older[j-2]+1);
+    }
+    older=previous; previous=row;
+  }
+  return previous[b.length];
+}
+function fuzzyDistance(value: string, term: string): number {
+  // Keep short acronyms exact. Compare contiguous words, rather than
+  // full employer/location strings (e.g. "Ottwa" vs "Ottawa, ON").
+  if (term.length<4) return Infinity;
+  const limit=term.length>=8 ? 2 : 1;
+  const words=value.split(" ");
+  const count=term.split(" ").length;
+  let best=Infinity;
+  for(let i=0;i<words.length;i++) {
+    for(let n=Math.max(1,count-1);n<=count+1 && i+n<=words.length;n++) {
+      const candidate=words.slice(i,i+n).join(" ");
+      if(candidate.length<4 || Math.abs(candidate.length-term.length)>limit) continue;
+      const edits=distance(term,candidate,limit);
+      if(edits<=limit) best=Math.min(best,edits);
+    }
+  }
+  return best;
+}
+function resolveFilter(values: string[], filter: string | undefined, field: Field) {
+  if (!filter) return { matches: (_:string)=>true, fuzzy:false };
+  const term=folded(filter);
+  const group=aliases[field].find(names=>names.includes(term));
+  const terms=group ?? [term];
+  const unique=[...new Set(values.map(folded))];
+  const direct=unique.filter(value=>terms.some(t=>exactMatch(value,t)));
+  if (direct.length) {
+    const accepted=new Set(direct);
+    return { matches:(value:string)=>accepted.has(folded(value)),fuzzy:false };
+  }
+  // A typo in a long-form alias may match a short stored code, but
+  // never edit the short code itself. Use only the closest candidates.
+  let best=Infinity;
+  let accepted=new Set<string>();
+  for (const value of unique) {
+    const expanded=[value,...aliases[field].filter(names=>names.some(name=>exactMatch(value,name))).flat()];
+    let score=Infinity;
+    for (const candidate of expanded) for (const t of terms) score=Math.min(score,fuzzyDistance(candidate,t));
+    if (!Number.isFinite(score)) continue;
+    if (score<best) { accepted=new Set(); best=score; }
+    if (score===best) accepted.add(value);
+  }
+  return { matches:(value:string)=>accepted.has(folded(value)),fuzzy:accepted.size>0 };
 }
 export function searchJobs(jobs: SearchJob[], query: SearchQuery, now = Date.now()) {
   const window = backfillWindow(query.days, now);
-  const matchesList = jobs.flatMap(job => {
+  const dated = jobs.flatMap(job => {
     const published = postedTime(job.postedAt);
     const seen = postedTime(job.firstSeenAt);
     const at = published ?? seen;
-    if (at === undefined || at < window.from || at > window.through ||
-        !matches(job.company, query.company) ||
-        (query.location && !job.locations.some(location => matches(location, query.location)))) return [];
+    if (at === undefined || at < window.from || at > window.through) return [];
     return [{ job, at, dateKind: published === undefined ? "First seen" : "Posted" }];
-  }).sort((a,b) => b.at - a.at || a.job.company.localeCompare(b.job.company) || a.job.title.localeCompare(b.job.title) || a.job.url.localeCompare(b.job.url));
+  });
+  const company=resolveFilter(dated.map(x=>x.job.company),query.company,"company");
+  const location=resolveFilter(dated.flatMap(x=>x.job.locations),query.location,"location");
+  const matchesList=dated.filter(({job})=>company.matches(job.company) &&
+    (!query.location || job.locations.some(location.matches)))
+    .sort((a,b) => b.at - a.at || a.job.company.localeCompare(b.job.company) || a.job.title.localeCompare(b.job.title) || a.job.url.localeCompare(b.job.url));
   const total = matchesList.length, pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const start = (query.page - 1) * PAGE_SIZE;
-  return { total, pages, page: query.page, known: matchesList.filter(x => x.dateKind === "Posted").length, items: matchesList.slice(start, start + PAGE_SIZE) };
+  const fuzzyFields = total ? [company.fuzzy ? "company" : "",location.fuzzy ? "location" : ""].filter(Boolean) : [];
+  return { total, pages, page: query.page, known: matchesList.filter(x => x.dateKind === "Posted").length, fuzzyFields, items: matchesList.slice(start, start + PAGE_SIZE) };
 }
 export function validSnapshot(input: unknown): SearchJob[] {
   const snapshot = input as { version?: unknown; jobs?: unknown };
@@ -90,7 +148,7 @@ export function formatSearch(jobs: SearchJob[], query: SearchQuery, now = Date.n
   const result = searchJobs(jobs, query, now);
   const scope = "Last " + query.days + " days" + (query.company ? " · " + display(query.company,100) : "") + (query.location ? " · " + display(query.location,100) : "");
   const header = scope + "\n" + result.total + " collected match(es): " + result.known + " dated, " + (result.total-result.known) + " first seen (publication date unknown).";
-  const note = "\nSearches monitored sources only; availability is not rechecked.";
+  const note = (result.fuzzyFields.length ? "\nApproximate match applied to: " + result.fuzzyFields.join(", ") + ". Check the names on the cards." : "") + "\nSearches monitored sources only; availability is not rechecked.";
   const page = result.total === 0 ? "" : result.page > result.pages ? "\nPage not found. Use a page from 1 to " + result.pages + "." : "\nPage " + result.page + " of " + result.pages + (result.page < result.pages ? " · repeat /ask with page:" + (result.page+1) : "");
   return { content: header + page + note, allowed_mentions: { parse: [] }, embeds: result.items.map(({job,at,dateKind}) => ({
     title: display(job.title,120).slice(0,240), url: job.url, color: 0x5865f2,
@@ -100,9 +158,8 @@ export function formatSearch(jobs: SearchJob[], query: SearchQuery, now = Date.n
 export const askCommand = {
   name: "ask", description: "Search collected job postings from the last 30 days", type: 1,
   options: [
-    {type:3,name:"question",description:"Ask about jobs, a company, location or date window",max_length:200},
-    {type:3,name:"company",description:"Company name (case-insensitive)",max_length:200},
-    {type:3,name:"location",description:"City, province or location",max_length:200},
+    {type:3,name:"company",description:"Company name (typos tolerated)",max_length:FILTER_MAX},
+    {type:3,name:"location",description:"City, province or location (typos tolerated)",max_length:FILTER_MAX},
     {type:4,name:"days",description:"Lookback days (default 30)",min_value:1,max_value:30},
     {type:4,name:"page",description:"Results page (default 1)",min_value:1,max_value:100000}
   ]

@@ -13,7 +13,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
 - Scheduled or manual polling, and bounded 1–30 day backfill.
-- Optional Discord `/ask` command for searching recent collected postings by company, location and date.
+- Optional Discord `/ask` command with structured filters and typo-tolerant company/location search.
 
 ## Quick start
 

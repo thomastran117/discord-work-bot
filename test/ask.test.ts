@@ -1,18 +1,40 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {parseAsk,formatSearch,searchJobs,validSnapshot} from "../src/services/ask.ts";
+import {parseAsk,formatSearch,searchJobs,validSnapshot,askCommand} from "../src/services/ask.ts";
 import {verifyRequest} from "../src/interactions/worker.ts";
 const now=Date.parse("2026-11-17T12:00:00Z");
 const firstSeenAt="2026-11-16T12:00:00.000Z";
 const job=(company:string,locations:string[],postedAt?:string)=>({company,title:"Engineer",locations,url:"https://example.com/"+encodeURIComponent(company),firstSeenAt,postedAt});
-test("question patterns and structured filters",()=>{
-  assert.deepEqual(parseAsk({question:"Did RBC posted in the last 3 days?"}),{company:"RBC",location:undefined,days:3,page:1});
-  assert.equal(parseAsk({question:"Give me the postings from the past 7 days"}).days,7);
-  assert.equal(parseAsk({question:"Find all Nokia postings in the max window"}).company,"Nokia");
-  assert.equal(parseAsk({question:"Find postings in Ottawa"}).location,"Ottawa");
-  assert.equal(parseAsk({company:"SAP",location:"Toronto",days:14,page:2}).page,2);
-  assert.throws(()=>parseAsk({days:31})); assert.throws(()=>parseAsk({days:0}));
-  assert.throws(()=>parseAsk({question:"hello"})); assert.throws(()=>parseAsk({question:"find jobs",company:"SAP"}));
+test("structured command defaults and validation",()=>{
+  assert.deepEqual(askCommand.options.map(x=>x.name),["company","location","days","page"]);
+  assert.deepEqual(parseAsk({}),{company:undefined,location:undefined,days:30,page:1});
+  assert.deepEqual(parseAsk({company:" RBC ",location:" Ottawa ",days:3,page:2}),{company:"RBC",location:"Ottawa",days:3,page:2});
+  for(const days of [0,31,1.5,NaN]) assert.throws(()=>parseAsk({days}));
+  for(const page of [0,1.5,100001]) assert.throws(()=>parseAsk({page}));
+  assert.throws(()=>parseAsk({company:"!!"})); assert.throws(()=>parseAsk({location:"a".repeat(101)}));
+  assert.throws(()=>parseAsk({question:"find jobs"} as any));
+});
+test("typos, transpositions, partial names and accent handling",()=>{
+  const jobs=[job("Nokia",["Ottawa, ON"]),job("Autodesk Inc.",["Toronto, Ontario"]),job("Ciena",["Ottawa, ON"]),job("Example",["Montréal, QC"]),job("SAP",["Vancouver, BC"])];
+  const find=(options:Parameters<typeof parseAsk>[0])=>searchJobs(jobs,parseAsk(options),now);
+  assert.equal(find({company:"Nokai"}).items[0].job.company,"Nokia");
+  assert.equal(find({company:"Autodsk",location:"Tornto"}).items[0].job.company,"Autodesk Inc.");
+  assert.deepEqual(find({company:"Autodsk",location:"Tornto"}).fuzzyFields,["company","location"]);
+  assert.equal(find({company:"Cien"}).total,1);
+  assert.equal(find({location:"Ottwa"}).total,2);
+  assert.equal(find({location:"Montreal"}).total,1);
+  assert.equal(find({location:"Ontairo"}).total,3);
+  assert.equal(find({location:"ON"}).total,3);
+  assert.equal(find({company:"SAB"}).total,0);
+  assert.equal(find({company:"unrelated"}).total,0);
+  assert.match(formatSearch(jobs,parseAsk({company:"Nokai"}),now).content,/Approximate match applied to: company/);
+});
+test("direct matches take precedence and filters remain conjunctive",()=>{
+  const jobs=[job("Nokia",["Ottawa"]),job("Nokio",["Toronto"]),job("Nokian",["Vancouver"]),job("Nokia",["Ottawa"],"2026-09-01T12:00:00.000Z")];
+  const found=searchJobs(jobs,parseAsk({company:"Nokia"}),now);
+  assert.equal(found.total,2); assert.deepEqual(found.fuzzyFields,[]);
+  assert.equal(searchJobs(jobs,parseAsk({company:"Nokia",location:"Toronto"}),now).total,0);
+  assert.equal(searchJobs([job("Example",["Toronto"])],parseAsk({location:"on"}),now).total,0);
 });
 test("dates, aliases and all locations",()=>{
   const jobs=[job("Royal Bank of Canada",["Toronto, ON","Ottawa, ON"],"2026-11-14T12:00:00.000Z"),job("RBC",["Ottawa, Ontario"]),job("RBC",["Ottawa"],"2026-10-01T12:00:00.000Z"),job("RBC",["Vancouver"]),"bad"].slice(0,4) as ReturnType<typeof job>[];
