@@ -10,6 +10,8 @@
     "start": "node --env-file-if-exists=.env src/index.ts",
     "once": "node --env-file-if-exists=.env src/index.ts --once",
     "preview": "node --env-file-if-exists=.env src/index.ts --dry-run",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test test/*.test.ts",
+    "backfill": "node --env-file-if-exists=.env src/index.ts --backfill",
+    "test:webhook": "node --env-file-if-exists=.env src/index.ts --test-webhook"
   }
 }

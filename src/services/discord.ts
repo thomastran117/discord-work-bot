@@ -27,12 +27,24 @@ export function buildPayload(job: Job) {
   };
 }
 
-export async function publishJob(webhook: URL, job: Job, request = fetch): Promise<string> {
+export function publishJob(webhook: URL, job: Job, request = fetch): Promise<string> {
+  return executeWebhook(webhook, buildPayload(job), request);
+}
+
+export function testWebhook(webhook: URL, request = fetch): Promise<string> {
+  return executeWebhook(webhook, {
+    username: "Canada Job Bot",
+    allowed_mentions: { parse: [] },
+    content: "Discord job bot webhook test: delivery is working. No job records were modified."
+  }, request);
+}
+
+async function executeWebhook(webhook: URL, payload: object, request: typeof fetch): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
     let response: Response;
     try {
       response = await request(webhook, { method: "POST", redirect: "error",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildPayload(job)),
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         signal: AbortSignal.timeout(15_000) });
     } catch {
       // A timeout may mean Discord accepted the message. Do not immediately retry.
@@ -45,7 +57,12 @@ export async function publishJob(webhook: URL, job: Job, request = fetch): Promi
       await sleep(Math.max(1000, Math.ceil(seconds * 1000)));
       continue;
     }
-    if (!response.ok) throw new Error("Discord HTTP " + response.status);
+    if (!response.ok) {
+      // Discord's numeric API error code is useful without logging the response body or token.
+      const body = await response.json().catch(() => ({}));
+      const code = typeof body?.code === "number" ? " (API code " + body.code + ")" : "";
+      throw new Error("Discord HTTP " + response.status + code);
+    }
     const message = await response.json();
     if (typeof message.id !== "string") throw new Error("Discord response missing message ID");
     return message.id;

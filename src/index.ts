@@ -3,12 +3,35 @@ import { JobsRepository } from "./repositories/jobs.ts";
 import { simplifySource } from "./sources/simplify.ts";
 import { atsSource } from "./sources/ats.ts";
 import { runAggregation } from "./services/aggregator.ts";
-import { publishJob, webhookUrl } from "./services/discord.ts";
+import { publishJob, webhookUrl, testWebhook } from "./services/discord.ts";
 import { log } from "./utils/logger.ts";
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const once = dryRun || process.argv.includes("--once");
+  const backfill = process.argv.includes("--backfill");
+  if (process.argv.includes("--test-webhook")) {
+    if (!process.env.DISCORD_WEBHOOK_URL) {
+      log("error", "webhook_test_failed", { error: "DISCORD_WEBHOOK_URL is required" });
+      process.exitCode = 1;
+      return;
+    }
+    let webhook: URL;
+    try { webhook = webhookUrl(process.env.DISCORD_WEBHOOK_URL); }
+    catch {
+      log("error", "webhook_test_failed", { error: "Invalid Discord webhook URL" });
+      process.exitCode = 1;
+      return;
+    }
+    try {
+      const messageId = await testWebhook(webhook);
+      log("info", "webhook_test_confirmed", { messageId });
+    } catch (error) {
+      log("error", "webhook_test_failed", { error: error instanceof Error ? error.message : "Unknown Discord error" });
+      process.exitCode = 1;
+    }
+    return;
+  }
+  const once = dryRun || backfill || process.argv.includes("--once");
   const config = loadConfig();
   const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl)] : []), ...config.boards.map(atsSource)];
   if (!sources.length) throw new Error("No job sources configured");
@@ -17,7 +40,7 @@ async function main() {
   const webhook = dryRun ? undefined : webhookUrl(config.webhook!);
   const repository = dryRun ? undefined : new JobsRepository(config.databasePath);
   const options = { repository, publish: webhook ? (job: Parameters<typeof publishJob>[1]) => publishJob(webhook, job) : undefined,
-    dryRun, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst };
+    dryRun, backfill, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst };
   if (once) {
     try {
       const result = await runAggregation(sources, options);

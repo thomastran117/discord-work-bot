@@ -5,10 +5,15 @@ on:
     - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
-      preview:
-        description: Preview only (no Discord delivery or state changes)
-        type: boolean
-        default: true
+      mode:
+        description: Choose preview, webhook test, normal poll, or backfill current seeded jobs
+        type: choice
+        default: preview
+        options:
+          - preview
+          - test-webhook
+          - poll
+          - backfill
 
 permissions:
   contents: read
@@ -19,7 +24,7 @@ concurrency:
 
 jobs:
   preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.preview
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,8 +37,25 @@ jobs:
           package-manager-cache: false
       - run: npm run preview
 
+  test-webhook:
+    if: github.ref_name == github.event.repository.default_branch && github.event_name == 'workflow_dispatch' && inputs.mode == 'test-webhook'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Send a single Discord test message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: npm run test:webhook
+
   poll:
-    if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.preview))
+    if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'poll' || inputs.mode == 'backfill')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -62,12 +84,17 @@ jobs:
         timeout-minutes: 20
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_MODE: ${{ inputs.mode }}
         run: |
           if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
             echo "::error::Set the DISCORD_WEBHOOK_URL repository Actions secret."
             exit 1
           fi
-          npm run once
+          if [[ "$RUN_MODE" == backfill ]]; then
+            npm run backfill
+          else
+            npm run once
+          fi
       - name: Persist state even after a partial failure
         if: always() && steps.restore.outcome == 'success' && steps.poll.outcome != 'skipped'
         env:
