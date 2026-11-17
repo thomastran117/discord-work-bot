@@ -19,6 +19,9 @@ const SOURCE_LABELS: Record<string, string> = {
   greenhouse: "Greenhouse",
   lever: "Lever",
   ashby: "Ashby",
+  "vansh-canada": "Vansh New-Grad Canada",
+  "grind-canada": "Grind",
+  "intern-radar": "Intern Radar",
   preview: "Preview only"
 };
 

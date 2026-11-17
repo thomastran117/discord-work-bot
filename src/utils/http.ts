@@ -1,11 +1,11 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
-export async function getJson(url: string, request = fetch): Promise<unknown> {
+async function getResponse(url: string, accept: string, request: typeof fetch): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt++) {
     let response: Response;
     try {
       response = await request(url, {
-        headers: { Accept: "application/json", "User-Agent": "discord-work-bot/0.1" },
+        headers: { Accept: accept, "User-Agent": "discord-work-bot/0.1" },
         signal: AbortSignal.timeout(20_000)
       });
     } catch {
@@ -13,7 +13,8 @@ export async function getJson(url: string, request = fetch): Promise<unknown> {
       await sleep(1000 * 2 ** attempt);
       continue;
     }
-    if (response.ok) return response.json();
+    if (response.ok) return response;
+    await response.body?.cancel();
     if (response.status !== 429 && response.status < 500)
       throw new Error("Source HTTP " + response.status);
     if (attempt === 2) throw new Error("Source HTTP " + response.status);
@@ -26,6 +27,14 @@ export async function getJson(url: string, request = fetch): Promise<unknown> {
     await sleep(Math.max(1000, delay));
   }
   throw new Error("Source retry limit reached");
+}
+
+export async function getJson(url: string, request = fetch): Promise<unknown> {
+  return (await getResponse(url, "application/json", request)).json();
+}
+
+export async function getText(url: string, request = fetch): Promise<string> {
+  return (await getResponse(url, "text/plain, text/markdown;q=0.9", request)).text();
 }
 
 // Keep runtime validation independent of compile-time TypeScript types.

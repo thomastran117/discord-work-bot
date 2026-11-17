@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { BoardConfig } from "./models/job.ts";
 import { record, str } from "./utils/http.ts";
+import { FEEDS } from "./sources/curated.ts";
+import type { FeedId } from "./sources/curated.ts";
 
 function positiveInt(value: string | undefined, fallback: number, max: number): number {
   const number = Number(value ?? fallback);
@@ -21,9 +23,21 @@ export function loadConfig(env = process.env) {
         !["global", "eu"].includes(region!) || (region === "eu" && provider !== "lever")) throw new Error("Invalid employer board configuration");
     return { provider, company, board, region };
   });
+  const feedRaw: unknown = JSON.parse(readFileSync(env.FEEDS_PATH || "./config/feeds.json", "utf8"));
+  if (!Array.isArray(feedRaw)) throw new Error("Feeds config must be an array");
+  const seen = new Set<string>();
+  const feeds: FeedId[] = [];
+  for (const entry of feedRaw) {
+    const row = record(entry);
+    const id = str(row.id);
+    if (!Object.hasOwn(FEEDS, id) || typeof row.enabled !== "boolean" || seen.has(id))
+      throw new Error("Invalid or duplicate curated feed configuration");
+    seen.add(id);
+    if (row.enabled) feeds.push(id as FeedId);
+  }
   const enabled = env.SIMPLIFY_ENABLED ?? "true";
   if (!["true", "false"].includes(enabled)) throw new Error("SIMPLIFY_ENABLED must be true or false");
-  return { boards, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
+  return { boards, feeds, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
     databasePath: env.DATABASE_PATH || "./data/jobs.db", webhook: env.DISCORD_WEBHOOK_URL,
     intervalMs: positiveInt(env.POLL_INTERVAL_MINUTES, 120, 1440) * 60_000,
     maxNotifications: positiveInt(env.MAX_NOTIFICATIONS_PER_RUN, 25, 500), seedFirst: mode === "seed" };

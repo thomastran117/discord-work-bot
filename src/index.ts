@@ -2,6 +2,7 @@ import { loadConfig } from "./config.ts";
 import { JobsRepository } from "./repositories/jobs.ts";
 import { simplifySource } from "./sources/simplify.ts";
 import { atsSource } from "./sources/ats.ts";
+import { curatedSource } from "./sources/curated.ts";
 import { runAggregation } from "./services/aggregator.ts";
 import { publishJob, webhookUrl, testWebhook } from "./services/discord.ts";
 import { log } from "./utils/logger.ts";
@@ -33,7 +34,7 @@ async function main() {
   }
   const once = dryRun || backfill || process.argv.includes("--once");
   const config = loadConfig();
-  const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl)] : []), ...config.boards.map(atsSource)];
+  const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl)] : []), ...config.boards.map(atsSource), ...config.feeds.map(curatedSource)];
   if (!sources.length) throw new Error("No job sources configured");
   if (new Set(sources.map(source => source.name)).size !== sources.length) throw new Error("Duplicate source configuration");
   if (!dryRun && !config.webhook) throw new Error("DISCORD_WEBHOOK_URL is required (or use npm run preview)");
