@@ -39,7 +39,6 @@ jobs:
     permissions:
       contents: write
     env:
-      DATABASE_PATH: ${{ runner.temp }}/discord-job-bot/jobs.db
       STATE_BRANCH: bot-state
       FIRST_RUN_MODE: ${{ vars.FIRST_RUN_MODE || 'seed' }}
       MAX_NOTIFICATIONS_PER_RUN: ${{ vars.MAX_NOTIFICATIONS_PER_RUN || '25' }}
@@ -51,6 +50,8 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Set database location
+        run: echo "DATABASE_PATH=$RUNNER_TEMP/discord-job-bot/jobs.db" >> "$GITHUB_ENV"
       - name: Restore persistent state
         id: restore
         env:
