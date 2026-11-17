@@ -7,5 +7,6 @@ services:
     volumes:
       - job-data:/app/data
       - ./config/boards.json:/app/config/boards.json:ro
+      - ./config/feeds.json:/app/config/feeds.json:ro
 volumes:
   job-data:

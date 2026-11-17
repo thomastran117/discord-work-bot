@@ -65,7 +65,10 @@ export function parseCurated(id: FeedId, markdown: string): Job[] {
         id === "intern-radar" ? lower.includes("apply") && lower.includes("posted") :
         lower.includes("application/link") && lower.includes("date posted"));
     if (isHeader) { header = lower; found = true; previousCompany = ""; continue; }
-    if (lower.includes("company") || cols.every(cell => /^:?-+:?$/.test(cell))) continue;
+    if (lower.includes("company") && lower.includes("role") && lower.includes("location")) {
+      header = []; previousCompany = ""; continue;
+    }
+    if (cols.every(cell => /^:?-+:?$/.test(cell))) continue;
     if (!header.length || cols.length !== header.length) continue;
     const cell = (name: string) => cols[header.indexOf(name)] ?? "";
     const companyCell = cell("company");
