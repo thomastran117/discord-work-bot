@@ -3,4 +3,4 @@ main = "src/interactions/worker.ts"
 compatibility_date = "2025-09-01"
 
 [vars]
-JOBS_SNAPSHOT_URL = "https://raw.githubusercontent.com/thomastran117/discord-work-bot/bot-state/jobs.json"
+JOBS_SNAPSHOT_URL = "https://raw.githubusercontent.com/thomastran117x/discord-work-bot/bot-state/jobs.json"
