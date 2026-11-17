@@ -99,6 +99,7 @@ test("webhook payload includes required fields and disables mentions", async () 
   assert.equal(url.searchParams.get("with_components"), "true");
   assert.deepEqual(payload.allowed_mentions.parse, []);
   assert.throws(() => webhookUrl("https://example.com/api/webhooks/1/token"));
+  assert.equal(webhookUrl("https://discord.com/api/webhooks/1/test-token?thread_id=123").searchParams.get("thread_id"), "123");
   const request = async (_url: URL | RequestInfo, init?: RequestInit) => {
     assert.equal(init?.method, "POST");
     return Response.json({ id: "42" });
@@ -214,12 +215,39 @@ test("permanent Discord payload failures are quarantined without blocking later 
 
 test("Discord classifies invalid payload responses as permanent", async () => {
   const webhook = webhookUrl("https://discord.com/api/webhooks/1/test-token");
-  await assert.rejects(
-    publishJob(webhook, job, (async () => Response.json({ code: 50035 }, { status: 400 })) as typeof fetch),
-    PermanentDeliveryError
-  );
+  for (const [status, code] of [[400, 40005], [400, 50035], [413, 0]] as const) {
+    await assert.rejects(
+      publishJob(webhook, job, (async () => Response.json({ code }, { status })) as typeof fetch),
+      PermanentDeliveryError
+    );
+  }
   await assert.rejects(
     publishJob(webhook, { ...job, url: "http://example.com/legacy" }),
     PermanentDeliveryError
   );
+});
+
+test("Discord destination errors remain pending instead of quarantining jobs", async () => {
+  const webhook = webhookUrl("https://discord.com/api/webhooks/1/test-token");
+  const destinationFailure = (async () =>
+    Response.json({ code: 220001, message: "Webhooks posted to forum channels must have a thread_name or thread_id" },
+      { status: 400 })) as typeof fetch;
+  await assert.rejects(publishJob(webhook, job, destinationFailure), error => {
+    assert.ok(error instanceof Error);
+    assert.equal(error instanceof PermanentDeliveryError, false);
+    assert.match(error.message, /Discord HTTP 400 \(API code 220001\)/);
+    return true;
+  });
+
+  const db = new JobsRepository(":memory:");
+  try {
+    const result = await runAggregation([{ name: "alpha", async fetchJobs() { return [job]; } }], {
+      repository: db, seedFirst: false, maxNotifications: 10,
+      publish: item => publishJob(webhook, item, destinationFailure)
+    });
+    assert.equal(result.deliveryFailed, true);
+    assert.equal(result.rejected, 0);
+    assert.deepEqual(db.counts(), { pending: 1, seeded: 0, sent: 0, rejected: 0 });
+    assert.equal(db.pending(10).length, 1);
+  } finally { db.close(); }
 });

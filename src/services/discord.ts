@@ -116,9 +116,14 @@ async function executeWebhook(webhook: URL, payload: object, request: typeof fet
     if (!response.ok) {
       // Discord's numeric API error code is useful without logging the response body or token.
       const body = await response.json().catch(() => ({}));
-      const code = typeof body?.code === "number" ? " (API code " + body.code + ")" : "";
+      const apiCode = typeof body?.code === "number" ? body.code : undefined;
+      const code = apiCode === undefined ? "" : " (API code " + apiCode + ")";
       const message = "Discord HTTP " + response.status + code;
-      if ([400, 413, 422].includes(response.status)) throw new PermanentDeliveryError(message);
+      // Quarantine only errors tied to this job payload. Other 4xx responses
+      // can describe webhook, channel, permission or thread configuration and
+      // must remain pending so a configuration fix can recover the queue.
+      if (response.status === 413 || apiCode === 40005 || apiCode === 50035)
+        throw new PermanentDeliveryError(message);
       throw new Error(message);
     }
     const message = await response.json();

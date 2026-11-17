@@ -14,6 +14,8 @@ The recommended deployment is a GitHub-hosted runner. No server, bot token, paid
 
 The production workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). The exact local time changes with daylight saving time. GitHub can delay or drop scheduled runs; schedules run on the default branch. GitHub may disable scheduled workflows in inactive public repositories after 60 days. Check the Actions tab if polling stops.
 
+For a forum or media channel, append `?thread_id=<thread snowflake>` to the webhook URL stored in `DISCORD_WEBHOOK_URL`. Discord requires a thread destination for those channel types; without it, delivery is deferred with API error `220001` and jobs remain pending.
+
 ### Workflow modes
 
 | Mode | Description | Sends Discord messages | Writes state |
@@ -99,7 +101,7 @@ Do not delete, force-update or manually edit `bot-state`. If restore fails, the 
 
 In a public repository, this branch and its history are public. It contains posting metadata and Discord message IDs, not webhook credentials or full descriptions from the current ingestion pipeline. Do not upload a pre-existing local database that contains private or restricted data. Use a private repository or a private state store if necessary. Preview logs are also public.
 
-Normalized posting fields are bounded before persistence. Discord payloads show the destination hostname and accept only HTTPS application links. If local validation or Discord HTTP 400/413/422 identifies a permanently invalid payload, the job is recorded in `delivery_rejections` and later queued jobs continue. Other failures remain pending and stop the current delivery pass so transient outages and webhook configuration problems are not silently discarded.
+Normalized posting fields are bounded before persistence. Discord payloads show the destination hostname and accept only HTTPS application links. Local validation, HTTP 413, and Discord payload error codes `40005` or `50035` identify a permanently invalid job payload; the job is recorded in `delivery_rejections` and later queued jobs continue. Other failures—including forum/media destination error `220001`—remain pending and stop the current delivery pass so transient outages and webhook, permission, channel or thread configuration problems can be fixed without losing notifications.
 
 ## Troubleshooting
 
