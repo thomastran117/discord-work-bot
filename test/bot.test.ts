@@ -10,7 +10,7 @@ import { normalizeUrl, urlIdentity, normalizeJob } from "../src/services/identit
 import { parseSimplify } from "../src/sources/simplify.ts";
 import { parseBoard, boardUrl } from "../src/sources/ats.ts";
 import { JobsRepository } from "../src/repositories/jobs.ts";
-import { buildPayload, publishJob, webhookUrl } from "../src/services/discord.ts";
+import { buildPayload, publishJob, webhookUrl, testWebhook } from "../src/services/discord.ts";
 import { runAggregation } from "../src/services/aggregator.ts";
 
 const job: Job = { source: "alpha", externalId: "1", title: "Software Engineer - New Grad", company: "Example", locations: ["Toronto, ON"], url: "https://job-boards.greenhouse.io/example/jobs/123" };
@@ -102,4 +102,50 @@ test("pipeline isolates source failures and retries persisted undelivered jobs",
     const preview = await runAggregation([sources[1]], { dryRun: true, seedFirst: false, maxNotifications: 10 });
     assert.equal(preview.matched, 1);
   } finally { db.close(); }
+});
+
+test("backfill queues current seeded jobs without replaying sent or absent jobs", async () => {
+  const db = new JobsRepository(":memory:");
+  const absent = { ...job, externalId: "absent", url: "https://example.com/absent" };
+  const sent = { ...job, externalId: "sent", url: "https://example.com/sent" };
+  try {
+    db.ingest("alpha", [job, absent], true);
+    db.ingest("alpha", [sent], true);
+    db.markSent(db.pending(1)[0].id, "previous-message");
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 2, sent: 1 });
+    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [job, sent]; } }];
+    const delivered: string[] = [];
+    const options = { repository: db, seedFirst: true, backfill: true, maxNotifications: 25,
+      publish: async (item: Job) => { delivered.push(item.externalId); return "new-message"; } };
+    assert.equal((await runAggregation(sources, options)).delivered, 1);
+    assert.deepEqual(delivered, [job.externalId]);
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 1, sent: 2 });
+    assert.equal((await runAggregation(sources, options)).delivered, 0);
+  } finally { db.close(); }
+});
+
+test("backfill bypasses first-run seeding and honours the delivery cap", async () => {
+  const db = new JobsRepository(":memory:");
+  try {
+    const other = { ...job, externalId: "other", url: "https://example.com/other" };
+    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [job, other]; } }];
+    const options = { repository: db, seedFirst: true, backfill: true, maxNotifications: 1, publish: async () => "42" };
+    assert.equal((await runAggregation(sources, options)).delivered, 1);
+    assert.equal(db.counts().pending, 1);
+    assert.equal((await runAggregation(sources, { ...options, backfill: false })).delivered, 1);
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 0, sent: 2 });
+  } finally { db.close(); }
+});
+
+test("webhook test sends one harmless message and reports safe API errors", async () => {
+  const webhook = webhookUrl("https://discord.com/api/webhooks/1/test-token");
+  const request = async (_url: URL | RequestInfo, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    assert.match(body.content, /webhook test/);
+    assert.deepEqual(body.allowed_mentions.parse, []);
+    return Response.json({ id: "43" });
+  };
+  assert.equal(await testWebhook(webhook, request as typeof fetch), "43");
+  await assert.rejects(testWebhook(webhook, (async () =>
+    Response.json({ code: 10015, message: "Unknown Webhook" }, { status: 404 })) as typeof fetch), /Discord HTTP 404 \(API code 10015\)/);
 });

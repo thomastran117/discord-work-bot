@@ -30,11 +30,11 @@ export class JobsRepository {
     `);
   }
 
-  ingest(source: string, jobs: Job[], seedFirst: boolean): { added: number; seeded: number; duplicates: number } {
-    const result = { added: 0, seeded: 0, duplicates: 0 };
+  ingest(source: string, jobs: Job[], seedFirst: boolean, backfill = false): { added: number; seeded: number; duplicates: number; requeued: number } {
+    const result = { added: 0, seeded: 0, duplicates: 0, requeued: 0 };
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const seed = seedFirst && !this.db.prepare("SELECT name FROM sources WHERE name=?").get(source);
+      const seed = !backfill && seedFirst && !this.db.prepare("SELECT name FROM sources WHERE name=?").get(source);
       for (const job of jobs) {
         const keys = ["source:" + job.source + ":" + job.externalId, "url:" + urlIdentity(job.url)];
         if (job.requisitionKey) keys.push("req:" + job.requisitionKey);
@@ -46,8 +46,18 @@ export class JobsRepository {
           result.duplicates++;
           const row = this.db.prepare("SELECT payload FROM jobs WHERE id=?").get(id)!;
           const original = JSON.parse(String(row.payload)) as Job;
-          if (!original.startDate && job.startDate)
+          if (backfill) {
+            // Only currently matched, never-notified seeded jobs are eligible.
+            // Use fresh metadata for those jobs; leave sent/pending state intact.
+            const changes = this.db.prepare("UPDATE jobs SET state='pending', payload=? WHERE id=? AND state='seeded'")
+              .run(JSON.stringify({ ...job, startDate: job.startDate ?? original.startDate }), id).changes;
+            result.requeued += Number(changes);
+          }
+          if (!original.startDate && job.startDate && !backfill)
             this.db.prepare("UPDATE jobs SET payload=? WHERE id=?").run(JSON.stringify({ ...original, startDate: job.startDate }), id);
+          else if (backfill && !original.startDate && job.startDate)
+            this.db.prepare("UPDATE jobs SET payload=? WHERE id=? AND state='pending'")
+              .run(JSON.stringify({ ...job, startDate: job.startDate }), id);
         } else {
           this.db.prepare("INSERT INTO jobs(id,payload,state) VALUES(?,?,?)").run(id, JSON.stringify(job), seed ? "seeded" : "pending");
           result.added++;
@@ -62,6 +72,14 @@ export class JobsRepository {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  counts(): { pending: number; seeded: number; sent: number } {
+    const counts = { pending: 0, seeded: 0, sent: 0 };
+    for (const row of this.db.prepare("SELECT state, COUNT(*) AS count FROM jobs GROUP BY state").all()) {
+      counts[String(row.state) as keyof typeof counts] = Number(row.count);
+    }
+    return counts;
   }
 
   pending(limit: number): PendingJob[] {

@@ -17,7 +17,7 @@ npm run once
 npm start
 ~~~
 
-Preview performs real source GET requests but never sends messages or writes SQLite. The first normal run defaults to seeding existing eligible jobs silently, separately for each source. New jobs are sent on later polls. Set FIRST_RUN_MODE=publish **before the first normal run** to announce existing jobs instead. Changing it later does not replay seeded jobs. Notifications are capped at 25 per run by default. The service polls immediately, then every 120 minutes while running, skipping overlapping runs.
+Preview performs real source GET requests but never sends messages or writes SQLite. The first normal run defaults to seeding existing eligible jobs silently, separately for each source. New jobs are sent on later polls. Set FIRST_RUN_MODE=publish **before the first normal run** to announce existing jobs instead. Changing it later does not replay seeded jobs; use `npm run backfill` to queue currently eligible seeded jobs without replaying sent jobs. Use `npm run test:webhook` to send one diagnostic message without scraping or modifying state. Notifications are capped at 25 per run by default. The service polls immediately, then every 120 minutes while running, skipping overlapping runs.
 
 Docker: after creating .env, run `docker compose up --build -d`; inspect logs with `docker compose logs -f job-bot`. SQLite persists in a named volume. Run only one instance against each database/webhook. Set DATABASE_PATH to a location under /app/data for Docker persistence. No ports are exposed.
 
@@ -25,15 +25,17 @@ Docker: after creating .env, run `docker compose up --build -d`; inspect logs wi
 
 No VPS, Docker service or always-running process is needed. Merge the workflow into the default branch, then navigate to **Settings → Secrets and variables → Actions → New repository secret** and create `DISCORD_WEBHOOK_URL` with your Discord webhook. Never add the webhook to a repository variable or workflow file.
 
-1. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch. Keep **preview** checked for a read-only live-source check.
-2. Run the workflow again with **preview** unchecked. The first normal poll creates the state branch and seeds existing postings by default.
-3. The scheduled workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). GitHub can delay scheduled jobs; exact two-hour delivery is not guaranteed.
+1. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch. Select `preview` for a read-only live-source check.
+2. Select `test-webhook` to send one diagnostic message and confirm that the webhook targets the expected channel. This does not read or modify SQLite.
+3. Select `backfill` to queue and deliver currently eligible seeded jobs and newly discovered jobs. Already-sent jobs are not requeued. Delivery respects the per-run cap; remaining pending jobs are delivered on subsequent normal polls.
+4. Select `poll` for normal delivery; the first normal poll seeds existing jobs by default.
+5. The scheduled workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). GitHub can delay scheduled jobs; exact two-hour delivery is not guaranteed.
 
-Optional repository Actions variables: `FIRST_RUN_MODE` (seed or publish, default seed) and `MAX_NOTIFICATIONS_PER_RUN` (default 25). Enable publishing existing jobs before the initial run if desired. Scheduled runs use the default branch's board configuration. Do not run the production workflow and a local bot against the same Discord channel independently.
+Optional repository Actions variables: `FIRST_RUN_MODE` (seed or publish, default seed) and `MAX_NOTIFICATIONS_PER_RUN` (default 25). Enable publishing existing jobs before the initial run if desired, or use the explicit backfill mode after seeding. A normal run with zero pending jobs is successful and logs `no_notifications`; the webhook is not contacted. Use the test mode to distinguish an empty queue from a webhook failure. Scheduled runs use the default branch's board configuration. Do not run the production workflow and a local bot against the same Discord channel independently.
 
 ### Persistent state
 
-GitHub-hosted runners are ephemeral, so each production run restores `jobs.db` from an automatically created, dedicated `bot-state` Git branch, invokes `npm run once`, and saves the SQLite snapshot even if the polling command reports a partial failure. The branch contains only the database snapshot, not application code. The workflow uses the built-in GITHUB_TOKEN with contents write permission for the production job; preview and CI are read-only. No personal token is required unless repository policy prevents the normal token from writing. The workflow serializes production runs and avoids force-overwriting an existing state branch.
+GitHub-hosted runners are ephemeral, so each production run restores `jobs.db` from an automatically created, dedicated `bot-state` Git branch, invokes `npm run once`, and saves the SQLite snapshot even if the polling command reports a partial failure. The branch contains only the database snapshot, not application code. The workflow uses the built-in GITHUB_TOKEN with contents write permission for the production job; preview, webhook test and CI have read-only repository permissions. No personal token is required unless repository policy prevents the normal token from writing. The workflow serializes production runs and avoids force-overwriting an existing state branch.
 
 **Public repository:** the state branch and its history are public, as are workflow logs. The bot persists job metadata and Discord message IDs, not the webhook or full description text. Enable only sources whose terms permit this public storage and redistribution; use a private repository or external private state store if that is unsuitable. Do not copy a pre-existing local database with descriptions into this public branch.
 
