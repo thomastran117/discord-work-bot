@@ -8,10 +8,18 @@ import { runAggregation } from "./services/aggregator.ts";
 import { publishJob, webhookUrl, testWebhook } from "./services/discord.ts";
 import { log } from "./utils/logger.ts";
 import { SourceHttpClient } from "./utils/http.ts";
+import { backfillFromArgs } from "./services/backfill.ts";
+import type { BackfillWindow } from "./services/backfill.ts";
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const backfill = process.argv.includes("--backfill");
+  let backfill: BackfillWindow | undefined;
+  try { backfill = backfillFromArgs(process.argv.slice(2)); }
+  catch (error) {
+    log("error", "invalid_backfill", { error: error instanceof Error ? error.message : "Invalid backfill" });
+    process.exitCode = 1;
+    return;
+  }
   if (process.argv.includes("--test-webhook")) {
     if (!process.env.DISCORD_WEBHOOK_URL) {
       log("error", "webhook_test_failed", { error: "DISCORD_WEBHOOK_URL is required" });
@@ -34,7 +42,7 @@ async function main() {
     }
     return;
   }
-  const once = dryRun || backfill || process.argv.includes("--once");
+  const once = dryRun || Boolean(backfill) || process.argv.includes("--once");
   const config = loadConfig();
   if (!dryRun && !config.webhook) throw new Error("DISCORD_WEBHOOK_URL is required (or use npm run preview)");
   const webhook = dryRun ? undefined : webhookUrl(config.webhook!);

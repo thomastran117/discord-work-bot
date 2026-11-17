@@ -65,13 +65,13 @@ Ingestion is transactional. The system prefers known identifiers, strips common 
 stateDiagram-v2
     [*] --> seeded: First source poll in seed mode
     [*] --> pending: New job or publish mode
-    seeded --> pending: Explicit backfill sees eligible job
+    seeded --> pending: Explicit backfill sees recent dated eligible job
     pending --> pending: Delivery fails or is deferred
     pending --> sent: Discord confirms message ID
     pending --> rejected: Discord rejects payload permanently
 ~~~
 
-An empty but successful source response can initialize that source. A failed source does not initialize its first-run history. Backfill only requeues seeded jobs observed as eligible during the run; already-sent records remain sent.
+An empty but successful source response can initialize that source. A failed source does not initialize its first-run history. Backfill only requeues seeded jobs observed as eligible during the run with a known posting date in the 1–30 day window. Newly observed out-of-window or undated jobs are seeded. Already-sent records remain sent; existing pending jobs outside the window are deferred to ordinary polling. No schema migration is required. See [backfill rules](operations.md#backfill-rules).
 
 ## Delivery and reliability
 

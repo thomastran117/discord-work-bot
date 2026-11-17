@@ -4,6 +4,8 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Job } from "../models/job.ts";
 import { urlIdentity } from "../services/identity.ts";
+import { knownPostedAt, withinBackfill } from "../services/backfill.ts";
+import type { BackfillWindow } from "../services/backfill.ts";
 
 export interface PendingJob { id: string; job: Job }
 
@@ -38,8 +40,8 @@ export class JobsRepository {
     `);
   }
 
-  ingest(source: string, jobs: Job[], seedFirst: boolean, backfill = false): { added: number; seeded: number; duplicates: number; requeued: number } {
-    const result = { added: 0, seeded: 0, duplicates: 0, requeued: 0 };
+  ingest(source: string, jobs: Job[], seedFirst: boolean, backfill?: BackfillWindow): { added: number; seeded: number; duplicates: number; requeued: number; outsideBackfill: number } {
+    const result = { added: 0, seeded: 0, duplicates: 0, requeued: 0, outsideBackfill: 0 };
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const seed = !backfill && seedFirst && !this.db.prepare("SELECT name FROM sources WHERE name=?").get(source);
@@ -52,24 +54,37 @@ export class JobsRepository {
         const id = existing ?? randomUUID();
         if (existing) {
           result.duplicates++;
-          const row = this.db.prepare("SELECT payload FROM jobs WHERE id=?").get(id)!;
+          const row = this.db.prepare("SELECT payload,state FROM jobs WHERE id=?").get(id)!;
           const original = JSON.parse(String(row.payload)) as Job;
-          if (backfill) {
-            // Only currently matched, never-notified seeded jobs are eligible.
-            // Use fresh metadata for those jobs; leave sent/pending state intact.
-            const changes = this.db.prepare("UPDATE jobs SET state='pending', payload=? WHERE id=? AND state='seeded'")
-              .run(JSON.stringify({ ...job, startDate: job.startDate ?? original.startDate }), id).changes;
+          const postedAt = knownPostedAt(job.postedAt, original.postedAt);
+          const startDate = original.startDate ?? job.startDate;
+          const next = { ...original, postedAt, startDate };
+          if (backfill && withinBackfill(postedAt, backfill)) {
+            // Only currently matched, never-notified seeded jobs are requeued.
+            // Sent jobs and rejected payloads retain their delivery state.
+            const changes = this.db.prepare(`UPDATE jobs SET state='pending', payload=? WHERE id=? AND state='seeded'
+              AND NOT EXISTS (SELECT 1 FROM delivery_rejections WHERE job_id=jobs.id)`)
+              .run(JSON.stringify({ ...job, postedAt, startDate }), id).changes;
             result.requeued += Number(changes);
+            if (!changes && row.state !== "sent" &&
+                (original.postedAt !== postedAt || original.startDate !== startDate))
+              this.db.prepare("UPDATE jobs SET payload=? WHERE id=?").run(JSON.stringify(next), id);
+          } else {
+            if (backfill && row.state === "seeded") result.outsideBackfill++;
+            if (row.state !== "sent" && (original.postedAt !== postedAt || original.startDate !== startDate))
+              this.db.prepare("UPDATE jobs SET payload=? WHERE id=?").run(JSON.stringify(next), id);
           }
-          if (!original.startDate && job.startDate && !backfill)
-            this.db.prepare("UPDATE jobs SET payload=? WHERE id=?").run(JSON.stringify({ ...original, startDate: job.startDate }), id);
-          else if (backfill && !original.startDate && job.startDate)
-            this.db.prepare("UPDATE jobs SET payload=? WHERE id=? AND state='pending'")
-              .run(JSON.stringify({ ...job, startDate: job.startDate }), id);
         } else {
-          this.db.prepare("INSERT INTO jobs(id,payload,state) VALUES(?,?,?)").run(id, JSON.stringify(job), seed ? "seeded" : "pending");
+          const postedAt = knownPostedAt(job.postedAt, undefined);
+          const outside = Boolean(backfill && !withinBackfill(postedAt, backfill));
+          const shouldSeed = seed || outside;
+          // Remember out-of-window/undated discoveries silently so the next
+          // normal poll does not accidentally publish the skipped history.
+          this.db.prepare("INSERT INTO jobs(id,payload,state) VALUES(?,?,?)")
+            .run(id, JSON.stringify({ ...job, postedAt }), shouldSeed ? "seeded" : "pending");
           result.added++;
-          if (seed) result.seeded++;
+          if (shouldSeed) result.seeded++;
+          if (outside) result.outsideBackfill++;
         }
         for (const key of keys) this.db.prepare("INSERT OR IGNORE INTO identities VALUES(?,?)").run(key, id);
       }
@@ -104,13 +119,28 @@ export class JobsRepository {
     return counts;
   }
 
-  pending(limit: number): PendingJob[] {
-    return this.db.prepare(`
+  pending(limit: number, backfill?: BackfillWindow): PendingJob[] {
+    // Existing pending jobs outside a backfill window remain queued for
+    // normal polling. SQL narrows the queue before applying the delivery cap.
+    const dateFilter = backfill ? `AND julianday(json_extract(payload,'$.postedAt'))
+      BETWEEN julianday(?) AND julianday(?)` : "";
+    const statement = this.db.prepare(`
       SELECT id,payload FROM jobs WHERE state='pending'
       AND NOT EXISTS (SELECT 1 FROM delivery_rejections WHERE job_id=jobs.id)
-      ORDER BY first_seen_at,id LIMIT ?
-    `)
-      .all(limit).map(row => ({ id: String(row.id), job: JSON.parse(String(row.payload)) as Job }));
+      ${dateFilter}
+      ORDER BY first_seen_at,id
+    ` + (backfill ? "" : " LIMIT ?"));
+    const map = (row: Record<string, unknown>) => ({ id: String(row.id), job: JSON.parse(String(row.payload)) as Job });
+    if (!backfill) return statement.all(limit).map(map);
+    const args = [new Date(backfill.from).toISOString(), new Date(backfill.through).toISOString()];
+    const selected: PendingJob[] = [];
+    for (const row of statement.iterate(...args)) {
+      const item = map(row);
+      if (!withinBackfill(item.job.postedAt, backfill)) continue;
+      selected.push(item);
+      if (selected.length >= limit) break;
+    }
+    return selected;
   }
 
   markSent(id: string, messageId: string): void {

@@ -6,6 +6,7 @@ import { normalizeJob, urlIdentity } from "./identity.ts";
 import { SOURCE_DATA_LIMITS } from "../utils/http.ts";
 import { log } from "../utils/logger.ts";
 import { PermanentDeliveryError } from "./delivery.ts";
+import type { BackfillWindow } from "./backfill.ts";
 
 interface Options {
   repository?: JobsRepository;
@@ -13,12 +14,16 @@ interface Options {
   seedFirst: boolean;
   maxNotifications: number;
   dryRun?: boolean;
-  backfill?: boolean;
+  backfill?: BackfillWindow;
 }
 
 export async function runAggregation(sources: JobSource[], options: Options) {
   let failed = 0, delivered = 0, rejected = 0, matched = 0;
   const previews = new Map<string, Job>();
+  if (options.backfill) log("info", "backfill_started", {
+    days: options.backfill.days, from: new Date(options.backfill.from).toISOString(),
+    through: new Date(options.backfill.through).toISOString()
+  });
   // Sequential reads keep load low; a failed source does not block others.
   for (const source of sources) {
     try {
@@ -54,9 +59,9 @@ export async function runAggregation(sources: JobSource[], options: Options) {
   if (options.dryRun) {
     for (const job of previews.values()) log("info", "preview_job", { title: job.title, company: job.company, locations: job.locations, startDate: job.startDate ?? "Not specified", url: job.url });
   } else {
-    const queue = options.repository!.pending(options.maxNotifications);
-    log("info", "delivery_queue", { ...options.repository!.counts(), selected: queue.length, limit: options.maxNotifications, backfill: options.backfill === true });
-    if (!queue.length) log("info", "no_notifications", { reason: "No pending jobs; existing matches may be seeded or already sent. Use backfill for currently eligible seeded jobs, or test-webhook to check Discord." });
+    const queue = options.repository!.pending(options.maxNotifications, options.backfill);
+    log("info", "delivery_queue", { ...options.repository!.counts(), selected: queue.length, limit: options.maxNotifications, backfill: Boolean(options.backfill), backfillDays: options.backfill?.days });
+    if (!queue.length) log("info", "no_notifications", { reason: "No pending jobs; existing matches may be seeded or already sent. Use bounded backfill for recent seeded jobs, or local test:webhook to check Discord." });
     for (const item of queue) {
       try {
         const id = await options.publish!(item.job);
