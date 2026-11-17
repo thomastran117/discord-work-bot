@@ -91,7 +91,7 @@ All configured sources share one read-only HTTP client. Requests must use HTTPS 
 | Permanent HTTP errors, invalid JSON or incompatible schema | Fail without retry |
 | Redirect or oversized response | Reject immediately without following or retrying |
 
-An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Preview restores and reads saved cooldowns but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
+An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Preview restores and reads saved cooldowns but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle/SmartRecruiters two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
 
 ## State and recovery
 

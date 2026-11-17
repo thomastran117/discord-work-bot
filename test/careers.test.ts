@@ -16,7 +16,7 @@ const detail = { jobPostingInfo: { title: listRow.title, location: "Ottawa", job
 const oracleRow = { Id: "30015", Title: "Firmware Engineer - New Grad", PrimaryLocation: "Ottawa", PrimaryLocationCountry: "CA", ShortDescriptionStr: "<p>Early career</p>", PostedDate: "2026-11-15", secondaryLocations: [{ Name: "Toronto", Country: "CA" }] };
 
 test("direct career sources are enabled in default configuration", () => {
-  assert.deepEqual(loadConfig({}).careers, ["ciena","rbc","nokia"]);
+  assert.deepEqual(loadConfig({}).careers, ["ciena","rbc","nokia","sap","autodesk"]);
 });
 test("Workday list and detail normalize without inventing employment start date", () => {
   const page = parseWorkdayList(CAREERS.ciena, {total: 1, jobPostings: [listRow]});
@@ -70,4 +70,28 @@ test("career identities ignore locale and known Nokia host aliases", () => {
   assert.equal(urlIdentity("https://ciena.wd5.myworkdayjobs.com/en-US/Careers/job/Ottawa/Software-Engineer_R1234"), urlIdentity("https://ciena.wd5.myworkdayjobs.com/Careers/job/Ottawa/Other_R1234"));
   assert.equal(urlIdentity("https://jobs.nokia.com/en/sites/CX_1/job/30015"), urlIdentity(CAREERS.nokia.origin + "/hcmUI/CandidateExperience/en/sites/CX_1/job/30015"));
   assert.notEqual(urlIdentity("https://ciena.wd5.myworkdayjobs.com/Careers/job/Other_R1234-1"), urlIdentity("https://ciena.wd5.myworkdayjobs.com/Careers/job/Other_R1234"));
+});
+
+test("Autodesk uses its verified Ext Workday board and normalizes CAN location markers", async () => {
+  const row = { ...listRow, externalPath: "/job/Toronto-ON-CAN/Software-Engineer_26WD12345-1", locationsText: "Toronto-ON-CAN", bulletFields: ["26WD12345"] };
+  let searches = 0, details = 0;
+  const request = async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "autodesk.wd1.myworkdayjobs.com");
+    if (url.pathname.endsWith("/jobs")) {
+      searches++;
+      assert.equal(url.pathname, "/wday/cxs/autodesk/Ext/jobs");
+      assert.equal(init?.method, "POST");
+      return Response.json({ total: 1, jobPostings: [row] });
+    }
+    details++;
+    assert.equal(url.pathname, "/wday/cxs/autodesk/Ext" + row.externalPath);
+    return Response.json({ jobPostingInfo: {...detail.jobPostingInfo, location: "Toronto-ON-CAN", jobReqId: "26WD12345", additionalLocations: []} });
+  };
+  const jobs = await fetchWorkday(CAREERS.autodesk, mockedHttp(request as typeof fetch));
+  assert.equal(searches, 6);
+  assert.equal(details, 1);
+  assert.equal(jobs[0].company, "Autodesk");
+  assert.equal(jobs[0].locations[0], "Toronto-ON, Canada");
+  assert.ok(eligible(jobs[0]));
 });

@@ -69,6 +69,12 @@ export function urlIdentity(value: string): string {
     const index = parts.indexOf("job");
     if (index >= 0 && /^\d+$/.test(parts[index + 1] ?? "")) return "oracle:nokia:" + parts[index + 1];
   }
+  if (url.hostname === "jobs.smartrecruiters.com" && parts.length === 2) {
+    const id = parts[1].match(/^(\d+)(?:-|$)/)?.[1];
+    if (id) return "smartrecruiters:" + parts[0].toLowerCase() + ":" + id;
+  }
+  if (url.hostname === "jobs.sap.com" && parts[1] === "jobs" && /^\d+$/.test(parts[2] ?? ""))
+    return "smartrecruiters:sapitbusinesssysteme:" + parts[2];
   return value;
 }
 
