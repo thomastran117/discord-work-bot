@@ -12,6 +12,7 @@
     "preview": "node --env-file-if-exists=.env src/index.ts --dry-run",
     "test": "node --test test/*.test.ts",
     "backfill": "node --env-file-if-exists=.env src/index.ts --backfill",
+    "start:ask": "node --env-file-if-exists=.env src/interactions/index.ts",
     "register:ask": "node --env-file-if-exists=.env scripts/register-ask.ts",
     "test:webhook": "node --env-file-if-exists=.env src/index.ts --test-webhook"
   }

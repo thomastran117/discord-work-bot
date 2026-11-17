@@ -34,7 +34,7 @@ First normal polls seed existing listings by default; subsequent polls send new 
 
 ### Interactive search (optional)
 
-Deploy a lightweight Discord interaction endpoint and register `/ask` in your server. The scheduled poller runs on Railway; queries read the same public, bounded job index without polling sources. See [the setup guide](docs/ask.md).
+Deploy a second, always-running Railway service for the Discord interaction endpoint and register `/ask` in your server. The scheduled poller runs on Railway; queries read the same public, bounded job index without polling sources. See [the setup guide](docs/ask.md).
 
 ### Local development
 

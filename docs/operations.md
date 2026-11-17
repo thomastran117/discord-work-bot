@@ -154,3 +154,7 @@ Useful structured events: `poll_warning`, `poll_error`, `no_notifications`, `sou
 ### Observed deployment issue
 
 In [the Nov 17, 2026 production run](https://github.com/thomastran117/discord-work-bot/actions/runs/44024277333), 13 of 15 sources completed, 19 Discord notifications were delivered, and both Ciena and RBC returned HTTP 429. Nokia returned 70 postings but none passed the classifier. These are run-specific observations, not permanent source health or evidence that all eligible openings were found. Ciena and RBC remain configured; disable them in `config/careers.json` if the rate-limit problem persists.
+
+## Optional /ask service
+
+Deploy a separate always-running Railway service from the same Dockerfile with start command `npm run start:ask`, no cron, public HTTPS networking, and healthcheck `/health`. Do not reuse the poller's secrets. See [interactive search deployment](ask.md).

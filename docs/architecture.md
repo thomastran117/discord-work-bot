@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-The application is a modular Node.js 24/TypeScript service with native fetch, node:sqlite and the Node test runner. It runs as a one-shot process on Railway cron or manual GitHub Actions, or as a long-running local/Docker service. There is no dedicated HTTP server or Discord gateway connection.
+The application is a modular Node.js 24/TypeScript service with native fetch, node:sqlite and the Node test runner. It runs as a one-shot process on Railway cron or manual GitHub Actions, or as a long-running local/Docker service. The optional /ask service is a separate native Node HTTP server running continuously on Railway. No Discord gateway connection is needed.
 
 ## Data flow
 
@@ -28,6 +28,7 @@ The webhook-test mode skips this pipeline entirely and sends one fictional sampl
 | Path | Responsibility |
 | --- | --- |
 | `src/index.ts` | CLI modes, configuration assembly, scheduler and graceful shutdown |
+| `src/interactions/` | Always-running HTTP endpoint, signature validation and deferred /ask replies |
 | `src/config.ts` | Environment parsing and source configuration validation |
 | `src/models/job.ts` | Normalized job, board and source contracts |
 | `src/sources/` | SimplifyJobs, public ATS, curated and career-site adapters |
@@ -89,3 +90,7 @@ Railway and manual Actions acquire the same exclusive Git ref lock before restor
 - Git-backed state history can grow as jobs accumulate. Public state must remain free of secrets and restricted data.
 
 Future improvements may include reliable employer interfaces with permission, bilingual matching, richer source-level health diagnostics, closure detection and static type checking.
+
+## Interactive search service
+
+The separate Railway ask-service exposes GET /health and signed POST /interactions on PORT. It defers Discord commands immediately and reads the public jobs.json index with a one-minute cache and coalesced requests. It has no database access, Git write credential, poller webhook or Discord gateway connection. See [deployment](ask.md).
