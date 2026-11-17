@@ -15,15 +15,17 @@ python3 - "$DATABASE_PATH" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
     db.executescript("""
-        CREATE TABLE jobs (id TEXT PRIMARY KEY, state TEXT);
+        CREATE TABLE jobs (id TEXT PRIMARY KEY, state TEXT, payload TEXT, first_seen_at TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE identities (identity TEXT PRIMARY KEY);
         CREATE TABLE sources (name TEXT PRIMARY KEY);
-        INSERT INTO jobs VALUES ('example', 'pending');
+        INSERT INTO jobs(id,state,payload) VALUES ('example', 'pending', '{"company":"RBC","title":"Software Developer","locations":["Toronto, ON"],"url":"https://example.com/job"}');
     """)
 PY
 bash "$root/scripts/workflow-state.sh" save
 first="$(git ls-remote origin refs/heads/bot-state | cut -f1)"
 [[ -n "$first" ]]
+git fetch origin refs/heads/bot-state
+git show FETCH_HEAD:jobs.json | python3 -c 'import sys,json; x=json.load(sys.stdin); assert x["version"] == 1 and x["jobs"][0]["company"] == "RBC" and "state" not in x["jobs"][0]'
 
 # Simulate a fresh hosted runner, then mark one job delivered.
 export DATABASE_PATH="$temp/second/jobs.db"

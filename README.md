@@ -13,6 +13,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
 - Scheduled or manual polling, and bounded 1–30 day backfill.
+- Optional Discord `/ask` command for searching recent collected postings by company, location and date.
 
 ## Quick start
 
@@ -26,6 +27,10 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 Scheduled runs execute automatically every two hours (best effort). First normal polls seed existing listings by default; subsequent polls send new jobs. Backfill only queues recent dated postings that have not been sent.
 
 > **Important:** In a public repository, the `bot-state` branch and workflow logs are public. Never commit webhook secrets or delete the state branch. Review source terms before enabling collection.
+
+### Interactive search (optional)
+
+Deploy a lightweight Discord interaction endpoint and register `/ask` in your server. The scheduled poller stays on GitHub Actions; queries read a public, bounded job index without polling sources. See [the setup guide](docs/ask.md).
 
 ### Local development
 
