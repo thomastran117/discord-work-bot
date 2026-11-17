@@ -1,5 +1,5 @@
 import type { Job, JobSource } from "../models/job.ts";
-import { getText, plain } from "../utils/http.ts";
+import { SourceHttpClient, plain } from "../utils/http.ts";
 import { normalizeUrl } from "../services/identity.ts";
 
 export const FEEDS = {
@@ -97,6 +97,6 @@ export function parseCurated(id: FeedId, markdown: string): Job[] {
   return jobs;
 }
 
-export function curatedSource(id: FeedId): JobSource {
-  return { name: id, async fetchJobs() { return parseCurated(id, await getText(FEEDS[id].url)); } };
+export function curatedSource(id: FeedId, http = new SourceHttpClient()): JobSource {
+  return { name: id, async fetchJobs() { return parseCurated(id, await http.getText(FEEDS[id].url)); } };
 }

@@ -1,5 +1,5 @@
 import type { BoardConfig, Job, JobSource } from "../models/job.ts";
-import { getJson, iso, plain, record, rows, str, strings } from "../utils/http.ts";
+import { SourceHttpClient, iso, plain, record, rows, str, strings } from "../utils/http.ts";
 
 export function boardName(config: BoardConfig): string {
   return [config.provider, config.region ?? "global", config.board].join(":");
@@ -53,6 +53,6 @@ export function parseBoard(config: BoardConfig, payload: unknown): Job[] {
   });
 }
 
-export function atsSource(config: BoardConfig): JobSource {
-  return { name: boardName(config), async fetchJobs() { return parseBoard(config, await getJson(boardUrl(config))); } };
+export function atsSource(config: BoardConfig, http = new SourceHttpClient()): JobSource {
+  return { name: boardName(config), async fetchJobs() { return parseBoard(config, await http.getJson(boardUrl(config))); } };
 }

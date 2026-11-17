@@ -35,6 +35,12 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Set preview database location
+        run: echo "DATABASE_PATH=$RUNNER_TEMP/discord-job-bot/jobs.db" >> "$GITHUB_ENV"
+      - name: Restore saved cooldowns (read only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/workflow-state.sh restore
       - run: npm run preview
 
   test-webhook:

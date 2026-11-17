@@ -23,7 +23,7 @@ Never commit `.env`, webhook URLs, database files or private source data. Use fi
 
 1. Check that the provider permits access and the intended reuse of its listings.
 2. For an existing Greenhouse, Lever or Ashby provider, prefer adding a board to `config/boards.json`.
-3. For a new provider, implement the `JobSource` contract in `src/sources/`, use the shared HTTP utilities and validate upstream formats.
+3. For a new provider, implement the `JobSource` contract in `src/sources/`, receive the shared SourceHttpClient and validate upstream formats. Never create a separate retry loop to bypass host cooldowns.
 4. Return stable source and external identifiers, real application URLs and location metadata. Do not invent dates or classify every generic role as new grad.
 5. Keep pagination, request budgets and retries bounded; do not circumvent rate limits or access controls.
 6. Add offline tests for valid, empty, malformed and closed/ineligible listings where applicable, and document new configuration in [the source guide](docs/sources.md).

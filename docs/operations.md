@@ -41,7 +41,7 @@ Use Node.js 24.x. Copy [`.env.example`](../.env.example) to `.env` and set the w
 | Command | Purpose |
 | --- | --- |
 | `npm test` | Offline Node test suite |
-| `npm run preview` | Live source preview; no database or webhook |
+| `npm run preview` | Live source preview; reads saved cooldowns if available, no state writes or webhook |
 | `npm run test:webhook` | Send a fictional card; no scraping or state changes |
 | `npm run once` | One standard poll |
 | `npm run backfill` | One poll with backfill |
@@ -76,6 +76,20 @@ The named volume `job-data` persists SQLite under `/app/data`. Keep `DATABASE_PA
 | `FEEDS_PATH` | `./config/feeds.json` | Optional curated feeds |
 | `CAREERS_PATH` | `./config/careers.json` | Workday and Oracle career sources |
 
+## Source retry and rate-limit policy
+
+All configured sources share one read-only HTTP client. Requests are sequential; minimum start-to-start spacing is one second per hostname, or two seconds for Workday hosts. A request may be attempted up to four times (one initial request and three retries), with a 20-second timeout per attempt.
+
+| Condition | Behaviour |
+| --- | --- |
+| Network failure, timeout, HTTP 408/425/500/502/503/504 | Exponential waits starting at 2 seconds (2, 4, 8), plus up to 25% jitter |
+| HTTP 429 | Slower exponential waits starting at 15 seconds (15, 30, 60), plus jitter |
+| Retry-After on retryable response | Honour seconds or HTTP date, never wait less than the header or the backoff |
+| Required wait exceeds 60 seconds, or rate-limit attempts exhausted | Defer the affected host; repeated 429s open at least a 30-minute cooldown |
+| Permanent HTTP errors, invalid JSON or incompatible schema | Fail without retry |
+
+An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Preview restores and reads saved cooldowns but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
+
 ## State and recovery
 
 GitHub runners are ephemeral. The workflow restores `jobs.db` from a dedicated `bot-state` branch, runs the one-shot bot, and saves a SQLite backup to that branch. It creates the branch on the first successful state save and skips committing unchanged logical state. The workflow grants the built-in `GITHUB_TOKEN` contents write access only for the production job. If a repository policy prevents writing, review the policy rather than committing a personal token.
@@ -90,13 +104,13 @@ In a public repository, this branch and its history are public. It contains post
 | --- | --- |
 | Green workflow, no Discord messages | Inspect `delivery_queue` and `no_notifications`. Use backfill for seeded matches and test-webhook for independent connectivity. |
 | Webhook test fails | Confirm repository secret, URL, intended channel, webhook permissions and any Discord API error code. Rotate a deleted or exposed webhook. |
-| Source HTTP 429 | Respect provider rate limits. Avoid repeated manual retries, wait for subsequent polls, or disable the affected source. Do not bypass blocking. |
+| Source HTTP 429 | Check source_http_retry, source_http_deferred and source_http_cooldown. Honour the logged retry time; disable the affected source if throttling persists. |
 | Source HTTP 403 or 404 | Check the provider's public interface, identifier and terms; disable invalid or disallowed sources. |
 | Workflow marked failed but messages were sent | One-shot mode returns failure when any source fails, even if other sources and delivery succeed. Review the summary and state-save step. |
 | Duplicates after a runner crash | Check whether the state-save step completed. Discord delivery and state persistence are not atomic. |
 | State restore/save fails | Inspect workflow permissions, branch health and Git logs. Do not reset state merely to clear an error. |
 
-Useful structured events: `source_complete`, `source_failed`, `delivery_queue`, `notification_sent`, `delivery_deferred`, `poll_complete`, `webhook_test_confirmed` and `webhook_test_failed`.
+Useful structured events: `source_http_retry`, `source_http_deferred`, `source_http_cooldown`, `source_complete`, `source_failed`, `delivery_queue`, `notification_sent`, `delivery_deferred`, `poll_complete`, `webhook_test_confirmed` and `webhook_test_failed`.
 
 ### Observed deployment issue
 
