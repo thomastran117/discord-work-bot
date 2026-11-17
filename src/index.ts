@@ -10,6 +10,7 @@ import { log } from "./utils/logger.ts";
 import { SourceHttpClient } from "./utils/http.ts";
 import { backfillFromArgs } from "./services/backfill.ts";
 import type { BackfillWindow } from "./services/backfill.ts";
+import { reportPollOutcome } from "./services/poll-outcome.ts";
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
@@ -64,7 +65,7 @@ async function main() {
   if (once) {
     try {
       const result = await runAggregation(sources, options);
-      if (result.failed || result.deliveryFailed) process.exitCode = 1;
+      process.exitCode = reportPollOutcome(result, sources.length, dryRun);
     } finally { repository?.close(); }
     return;
   }
@@ -72,7 +73,10 @@ async function main() {
   let stopping = false;
   const tick = () => {
     if (stopping || active) return;
-    active = runAggregation(sources, options).catch(() => log("error", "poll_failed")).finally(() => { active = undefined; });
+    active = runAggregation(sources, options)
+      .then(result => { reportPollOutcome(result, sources.length); })
+      .catch(() => log("error", "poll_failed"))
+      .finally(() => { active = undefined; });
   };
   const timer = setInterval(tick, config.intervalMs);
   const shutdown = async () => {

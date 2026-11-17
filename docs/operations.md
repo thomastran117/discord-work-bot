@@ -111,6 +111,10 @@ In a public repository, this branch and its history are public. It contains post
 
 Normalized posting fields are bounded before persistence. Discord payloads show the destination hostname and accept only HTTPS application links. Local validation, HTTP 413, and Discord payload error codes `40005` or `50035` identify a permanently invalid job payload; the job is recorded in `delivery_rejections` and later queued jobs continue. Other failures—including forum/media destination error `220001`—remain pending and stop the current delivery pass so transient outages and webhook, permission, channel or thread configuration problems can be fixed without losing notifications.
 
+## Poll outcomes
+
+A successful empty poll emits a warning (including a GitHub Actions warning annotation) and exits with code 0. Partial source outages also warn and exit with code 0 if delivery succeeds; this does not imply complete coverage. If all sources fail, or a Discord delivery, configuration or database operation fails, one-shot execution exits nonzero. Existing pending notifications can still be processed when sources fail. Invalid notification payloads are quarantined and warned about, rather than blocking the rest of the queue. Local preview uses the same partial-source policy but does not issue an empty-notification warning. State restore and save failures remain fatal.
+
 ## Troubleshooting
 
 | Symptom | What to check |
@@ -119,12 +123,13 @@ Normalized posting fields are bounded before persistence. Discord payloads show 
 | Webhook test fails | Confirm repository secret, URL, intended channel, webhook permissions and any Discord API error code. Rotate a deleted or exposed webhook. |
 | Source HTTP 429 | Check source_http_retry, source_http_deferred and source_http_cooldown. Honour the logged retry time; disable the affected source if throttling persists. |
 | Source HTTP 403 or 404 | Check the provider's public interface, identifier and terms; disable invalid or disallowed sources. |
-| Workflow marked failed but messages were sent | One-shot mode returns failure when any source fails, even if other sources and delivery succeed. Review the summary and state-save step. |
+| Workflow succeeds with warnings | No new notifications, partial source failures/cooldowns or quarantined payloads are non-fatal. Inspect `poll_warning` and source logs for incomplete coverage. |
+| Workflow marked failed | All sources failed, Discord delivery failed, or configuration/database/state persistence failed. Inspect `poll_error`, source logs and the state-save step. |
 | Rejected count increases | Inspect `notification_rejected`; the posting was quarantined after local payload validation or Discord rejected it as permanently invalid. |
 | Duplicates after a runner crash | Check whether the state-save step completed. Discord delivery and state persistence are not atomic. |
 | State restore/save fails | Inspect workflow permissions, branch health and Git logs. Do not reset state merely to clear an error. |
 
-Useful structured events: `source_http_retry`, `source_http_deferred`, `source_http_cooldown`, `source_complete`, `source_failed`, `delivery_queue`, `notification_sent`, `notification_rejected`, `delivery_deferred`, `poll_complete`, `webhook_test_confirmed` and `webhook_test_failed`.
+Useful structured events: `poll_warning`, `poll_error`, `no_notifications`, `source_http_retry`, `source_http_deferred`, `source_http_cooldown`, `source_complete`, `source_failed`, `delivery_queue`, `notification_sent`, `notification_rejected`, `delivery_deferred`, `poll_complete`, `webhook_test_confirmed` and `webhook_test_failed`.
 
 ### Observed deployment issue
 
