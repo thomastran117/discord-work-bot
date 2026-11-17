@@ -1,5 +1,5 @@
 import type { Job, JobSource } from "../models/job.ts";
-import { getJson, postSearchJson, record, rows, str, strings, plain, iso } from "../utils/http.ts";
+import { SourceHttpClient, SourceHttpError, record, rows, str, strings, plain, iso } from "../utils/http.ts";
 import { isCanadian } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 
@@ -64,14 +64,14 @@ export function enrichWorkday(job: Job, payload: unknown): Job {
     requisitionKey: req ? job.company.toLowerCase() + ":" + req : job.requisitionKey };
 }
 
-export async function fetchWorkday(board: WorkdayBoard, request = fetch): Promise<Job[]> {
+export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpClient(), signal?: AbortSignal): Promise<Job[]> {
   const seen = new Map<string, Job>();
   for (const keyword of keywords) {
     let offset = 0;
     for (let page = 0; page < maxPages; page++) {
-      const raw = await postSearchJson(workdayBase(board) + "/jobs", {
+      const raw = await http.postSearchJson(workdayBase(board) + "/jobs", {
         appliedFacets: {}, limit: pageSize, offset, searchText: keyword
-      }, request);
+      }, signal);
       const { total, jobs } = parseWorkdayList(board, raw);
       for (const job of jobs) seen.set(job.url, job);
       offset += jobs.length;
@@ -90,11 +90,11 @@ export async function fetchWorkday(board: WorkdayBoard, request = fetch): Promis
   for (const job of candidates.slice(0, maxDetails)) {
     const path = new URL(job.url).pathname.slice(board.site.length + 1);
     try {
-      const detail = await getJson(workdayBase(board) + path, request);
+      const detail = await http.getJson(workdayBase(board) + path, signal);
       result.push(enrichWorkday(job, detail));
     } catch (error) {
       // A posting can close between list and detail. For an HTTP 404, skip it.
-      if (error instanceof Error && error.message === "Source HTTP 404") continue;
+      if (error instanceof SourceHttpError && error.status === 404) continue;
       throw error;
     }
   }
@@ -135,7 +135,7 @@ export function parseOraclePage(board: OracleBoard, payload: unknown): { total: 
   return { total: root.TotalJobsCount, jobs };
 }
 
-export async function fetchOracle(board: OracleBoard, request = fetch): Promise<Job[]> {
+export async function fetchOracle(board: OracleBoard, http = new SourceHttpClient(), signal?: AbortSignal): Promise<Job[]> {
   const seen = new Map<string, Job>();
   let offset = 0;
   const limit = 25;
@@ -145,7 +145,7 @@ export async function fetchOracle(board: OracleBoard, request = fetch): Promise<
     url.searchParams.set("expand", "requisitionList");
     url.searchParams.set("finder", "findReqs;siteNumber=" + board.site + ",locationId=" + board.canadaId +
       ",limit=" + limit + ",offset=" + offset);
-    const { jobs, total } = parseOraclePage(board, await getJson(url.toString(), request));
+    const { jobs, total } = parseOraclePage(board, await http.getJson(url.toString(), signal));
     const before = seen.size;
     for (const job of jobs) seen.set(job.externalId, job);
     offset += jobs.length;
@@ -155,16 +155,13 @@ export async function fetchOracle(board: OracleBoard, request = fetch): Promise<
   throw new Error("Oracle search exceeded the bounded page budget");
 }
 
-export function careerSource(id: CareerId): JobSource {
+export function careerSource(id: CareerId, http = new SourceHttpClient()): JobSource {
   const board = CAREERS[id];
   const name = board.provider + ":" + id;
   return { name, async fetchJobs() {
-    // Limit each new employer to a bounded wall clock time, independently of
-    // the shared retry policy. Abort is not worked around with other endpoints.
-    const deadline = AbortSignal.timeout(120_000);
-    const request: typeof fetch = (input, init) => fetch(input, {
-      ...init, signal: init?.signal ? AbortSignal.any([deadline, init.signal]) : deadline
-    });
-    return board.provider === "workday" ? fetchWorkday(board, request) : fetchOracle(board, request);
+    // Allow time for the deliberate request pacing while bounding the entire
+    // search. The signal also cancels retry sleeps and detail requests.
+    const deadline = AbortSignal.timeout(board.provider === "workday" ? 240_000 : 120_000);
+    return board.provider === "workday" ? fetchWorkday(board, http, deadline) : fetchOracle(board, http, deadline);
   } };
 }

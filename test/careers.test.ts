@@ -4,6 +4,12 @@ import { CAREERS, parseWorkdayList, enrichWorkday, parseOraclePage, fetchWorkday
 import { loadConfig } from "../src/config.ts";
 import { urlIdentity } from "../src/services/identity.ts";
 import { eligible } from "../src/services/classifier.ts";
+import { SourceHttpClient } from "../src/utils/http.ts";
+
+function mockedHttp(request: typeof fetch) {
+  let now = 1_800_000_000_000;
+  return new SourceHttpClient({request, now: () => now, sleep: async ms => { now += ms; }, event: () => {}});
+}
 
 const listRow = { title: "Software Engineer - New Grad", externalPath: "/job/Ottawa/Software-Engineer_R1234", locationsText: "Ottawa, Canada", bulletFields: ["R1234"] };
 const detail = { jobPostingInfo: { title: listRow.title, location: "Ottawa", jobReqId: "R1234", timeType: "Full time", jobDescription: "<p>New graduates welcome</p>", startDate: "2026-11-17", additionalLocations: ["Toronto, ON"], jobRequisitionLocation: { country: { alpha2Code: "CA" } } } };
@@ -37,7 +43,7 @@ test("Workday searches using POST and fetches detail once per unique posting", a
     assert.match(String(url), /\/wday\/cxs\/rbc\/RBCGLOBAL1\/job\/Ottawa/);
     return Response.json(detail);
   };
-  const jobs = await fetchWorkday(CAREERS.rbc, request as typeof fetch);
+  const jobs = await fetchWorkday(CAREERS.rbc, mockedHttp(request as typeof fetch));
   assert.equal(searches, 6);
   assert.equal(details, 1);
   assert.equal(jobs[0].company, "RBC");
@@ -52,7 +58,7 @@ test("Oracle parses public requisitions and Canada search pagination", async () 
       finder.includes("offset=0") ? oracleRow : {...oracleRow, Id: "30016"}
     ] }]});
   };
-  const jobs = await fetchOracle(CAREERS.nokia, request as typeof fetch);
+  const jobs = await fetchOracle(CAREERS.nokia, mockedHttp(request as typeof fetch));
   assert.equal(jobs.length, 2);
   assert.match(calls[0], /locationId=300000000471544/);
   assert.match(calls[1], /offset=1/);

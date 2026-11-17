@@ -45,7 +45,7 @@ Edit [`config/careers.json`](../config/careers.json).
 
 - Workday uses a read-only search POST (never an application submission) and GET detail requests. The search is limited to six keywords, ten pages of up to 20 results per keyword, and 36 detail requests per employer. Results may be incomplete; RBC targets the main external board, not a separate early-talent board.
 - Nokia uses the Oracle Candidate Experience Canada location filter and paginated requisition summaries (up to 12 search pages). Missing location or experience evidence can exclude relevant roles.
-- Each career source has a 120-second network-request deadline, plus bounded HTTP retry handling. These browser-facing services are not stable, supported third-party API contracts. Ciena and RBC have returned HTTP 429 in GitHub Actions; Nokia's search has returned results, though no roles matched in that run. See [operations](operations.md#observed-deployment-issue).
+- Workday has a 240-second per-employer deadline; Oracle has 120 seconds. The shared HTTP policy spaces requests and respects throttling across all providers. These browser-facing services are not stable, supported third-party API contracts. Ciena and RBC have returned HTTP 429 in GitHub Actions; Nokia's search has returned results, though no roles matched in that run. See [operations](operations.md#observed-deployment-issue).
 
 Do not bypass access restrictions. Set `enabled: false` on a career source if it is blocked, not permitted or needs investigation.
 

@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Job } from "../models/job.ts";
@@ -26,6 +26,9 @@ export class JobsRepository {
         identity TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id)
       );
       CREATE TABLE IF NOT EXISTS sources (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS source_cooldowns (
+        host TEXT PRIMARY KEY, until_ms INTEGER NOT NULL
+      );
       CREATE INDEX IF NOT EXISTS jobs_pending ON jobs(state, first_seen_at);
     `);
   }
@@ -74,6 +77,15 @@ export class JobsRepository {
     }
   }
 
+  getCooldown(host: string): number {
+    return Number(this.db.prepare("SELECT until_ms FROM source_cooldowns WHERE host=?").get(host)?.until_ms ?? 0);
+  }
+
+  setCooldown(host: string, untilMs: number): void {
+    this.db.prepare("INSERT INTO source_cooldowns(host,until_ms) VALUES(?,?) ON CONFLICT(host) DO UPDATE SET until_ms=MAX(until_ms,excluded.until_ms)")
+      .run(host, untilMs);
+  }
+
   counts(): { pending: number; seeded: number; sent: number } {
     const counts = { pending: 0, seeded: 0, sent: 0 };
     for (const row of this.db.prepare("SELECT state, COUNT(*) AS count FROM jobs GROUP BY state").all()) {
@@ -92,4 +104,15 @@ export class JobsRepository {
   }
 
   close(): void { this.db.close(); }
+}
+
+// Preview honours the last saved cooldowns without creating or changing state.
+// Older snapshots can predate the additive cooldown-table migration.
+export function readSourceCooldowns(path: string): Map<string, number> {
+  if (path === ":memory:" || !existsSync(path)) return new Map();
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_cooldowns'").get()) return new Map();
+    return new Map(db.prepare("SELECT host,until_ms FROM source_cooldowns").all().map(row => [String(row.host), Number(row.until_ms)]));
+  } finally { db.close(); }
 }

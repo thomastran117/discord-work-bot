@@ -49,13 +49,14 @@ The classifier runs before full descriptions are removed from normalized records
 
 ## Persistence and identity
 
-SQLite contains three main tables:
+SQLite contains four main tables:
 
 | Table | Purpose |
 | --- | --- |
 | `jobs` | Canonical notification payload, first seen time, state and delivery confirmation |
 | `identities` | Unique source IDs, normalized URL identities and optional requisition keys mapped to jobs |
 | `sources` | Initialized source names, enabling per-source first-run behaviour |
+| `source_cooldowns` | Per-host retry-not-before timestamps (additive migration) |
 
 Ingestion is transactional. The system prefers known identifiers, strips common tracking parameters and normalizes recognized ATS URL aliases. It does not merge ambiguous matches based on company and role alone. Aliases introduced after a job was stored may not be linked until the original posting is observed again.
 
@@ -72,7 +73,7 @@ An empty but successful source response can initialize that source. A failed sou
 
 ## Delivery and reliability
 
-Each poll fetches sources sequentially to limit load. Individual source failures are isolated. HTTP requests use timeouts and bounded retries; long rate-limit waits are deferred rather than bypassed. The maximum number of pending jobs delivered per run is configurable. Discord uses `wait=true` to obtain a message ID before recording success; rate-limit responses are handled with bounded waits and ambiguous network failures are deferred.
+Each poll fetches sources sequentially to limit load. Individual source failures are isolated. A shared source HTTP client paces requests per host, uses bounded exponential retry with jitter and honours Retry-After. Long waits or exhausted rate limits defer a host, with cooldown state saved to SQLite between production runs. See [operations](operations.md#source-retry-and-rate-limit-policy). The maximum number of pending jobs delivered per run is configurable. Discord uses `wait=true` to obtain a message ID before recording success; rate-limit responses are handled with bounded waits and ambiguous network failures are deferred.
 
 GitHub Actions serializes runs and restores SQLite from `bot-state` before executing the one-shot command. A final save step runs even after ordinary partial failures, uses SQLite backup and integrity checking, and does not overwrite divergent state. A runner crash, cancellation or failed save can still lose confirmations. Discord and SQLite/Git cannot participate in one atomic transaction, so exactly-once delivery is not guaranteed.
 

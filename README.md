@@ -11,7 +11,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 - 15 configured sources, including SimplifyJobs and direct employer career boards.
 - Canadian location and early-career SWE filtering.
 - Clickable Discord job cards with employer, title, location and source.
-- Persistent SQLite deduplication and retryable notification delivery.
+- Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
 - Manual preview, webhook test and backfill modes.
 
 ## Quick start

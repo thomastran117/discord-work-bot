@@ -1,5 +1,5 @@
 import type { Job, JobSource } from "../models/job.ts";
-import { getJson, iso, rows, str, strings } from "../utils/http.ts";
+import { SourceHttpClient, iso, rows, str, strings } from "../utils/http.ts";
 
 export const SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json";
 
@@ -18,6 +18,6 @@ export function parseSimplify(payload: unknown): Job[] {
     }));
 }
 
-export function simplifySource(url = SIMPLIFY_URL): JobSource {
-  return { name: "simplify", async fetchJobs() { return parseSimplify(await getJson(url)); } };
+export function simplifySource(url = SIMPLIFY_URL, http = new SourceHttpClient()): JobSource {
+  return { name: "simplify", async fetchJobs() { return parseSimplify(await http.getJson(url)); } };
 }
