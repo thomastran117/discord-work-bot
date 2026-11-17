@@ -77,7 +77,7 @@ The parser reads raw Markdown tables, recognizes closed listings and handles pro
 
 All sources pass a shared Canadian location and software-role classifier. Curated feeds can supply an early-career signal; direct employers also use titles and description evidence. Internships, co-ops, explicitly senior and other excluded roles are rejected. Ambiguous locations and generic remote roles are conservatively filtered. This is heuristic: some suitable positions will be missed, and some non-target positions may pass. Full-time status is not guaranteed when employment type is absent.
 
-Adding a source initializes its own seed history. Preview first, then use poll or explicit backfill. Existing deduplication history is preserved. The bot does not verify closures for queued jobs, contact application forms or submit applications.
+Adding a source initializes its own seed history. Preview locally first, then use poll or explicit bounded backfill (1–30 days). Sources without reliable posting dates are excluded from backfill, not ordinary incremental discovery. Existing deduplication history is preserved. The bot does not verify closures for queued jobs, contact application forms or submit applications.
 
 ## Use and attribution
 

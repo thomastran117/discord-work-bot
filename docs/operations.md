@@ -9,8 +9,8 @@ The recommended deployment is a GitHub-hosted runner. No server, bot token, paid
 1. Enable GitHub Actions on your repository; forks may require enabling scheduled workflows manually.
 2. In Discord, go to **Edit Channel → Integrations → Webhooks**, create a webhook and copy its URL.
 3. In GitHub, navigate to **Settings → Secrets and variables → Actions → New repository secret**, use the name `DISCORD_WEBHOOK_URL` and paste the URL as the secret value. Do not put it in an Actions variable.
-4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch. First run `test-webhook` and `preview` to confirm the destination and source health.
-5. Select `poll` to start monitoring or `backfill` to queue current matches immediately.
+4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch.
+5. Select `poll` (default) for normal monitoring or `backfill` with a lookback of 1–30 days (default 7).
 
 The production workflow runs at minute 17 of every even UTC hour (`17 */2 * * *`). The exact local time changes with daylight saving time. GitHub can delay or drop scheduled runs; schedules run on the default branch. GitHub may disable scheduled workflows in inactive public repositories after 60 days. Check the Actions tab if polling stops.
 
@@ -18,14 +18,22 @@ For a forum or media channel, append `?thread_id=<thread snowflake>` to the webh
 
 ### Workflow modes
 
-| Mode | Description | Sends Discord messages | Writes state |
-| --- | --- | --- | --- |
-| `preview` | Fetch and filter live sources | No | No |
-| `test-webhook` | Send a clearly labelled fictitious sample card | One test message | No |
-| `poll` | Normal incremental poll, also used by the schedule | Pending jobs | Yes |
-| `backfill` | Queue current matches previously seeded but not sent, plus new jobs | Pending jobs | Yes |
+| Mode | Description |
+| --- | --- |
+| `poll` (default) | Normal incremental poll, also used by the schedule. The first successful poll seeds existing matches per source by default. |
+| `backfill` | Fetch current matches and queue unsent postings dated within the requested lookback. |
 
-Only preview can run on non-default branches; the production modes require the default branch. The first successful poll of **each source** defaults to silently seeding existing matches. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs. Backfill is the explicit way to queue current seeded matches without replaying sent jobs. The default delivery cap is 25 per run and subsequent normal polls drain the remaining pending queue.
+Both modes run on the default branch and restore/save SQLite. Manual backfill accepts a whole number of days from 1 to 30 (default 7); scheduled and manual poll ignore this input. Both GitHub Actions and the CLI validate the bound. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs.
+
+### Backfill rules
+
+The lookback is an inclusive rolling UTC window from run start minus X × 24 hours to run start. The bot uses the source-provided normalized posting timestamp (or an earlier known date on a matched alias), not the discovery time, employment start date or last-updated timestamp. Date-only values use midnight UTC. Missing, invalid, future and older dates are not backfilled; newly discovered out-of-window or undated jobs are recorded as seeded to avoid flooding the next poll. A wider later backfill can recover a still-eligible, dated seed record.
+
+Already sent or quarantined jobs are not requeued. Each run observes the live source snapshots rather than recovering historical closed postings. Previously pending jobs outside the window stay pending for normal polling; the current backfill delivery pass selects only pending jobs dated inside the window. The normal 25-message default delivery cap applies; queued jobs can drain on subsequent normal polls. Because normal polling has no age restriction, its previously queued or newly discovered jobs can include older or undated postings.
+
+Date coverage varies by source. Greenhouse's existing adapter does not expose a posting date (an update timestamp is not a publication date); some community lists have no full publication date. Lever's creation timestamp and other providers' published/released dates are the available source signals and may differ from an original publication date. Unknown dates are skipped rather than guessed; this is a safety limit, not a guarantee of complete historical coverage.
+
+Preview and webhook-test diagnostics are intentionally CLI-only; use `npm run preview` and `npm run test:webhook` locally. The latter sends one labelled example card and does not scrape or write job state.
 
 Set these optional **repository Actions variables** in Settings:
 
@@ -46,7 +54,7 @@ Use Node.js 24.x. Copy [`.env.example`](../.env.example) to `.env` and set the w
 | `npm run preview` | Live source preview; reads saved cooldowns if available, no state writes or webhook |
 | `npm run test:webhook` | Send a fictional card; no scraping or state changes |
 | `npm run once` | One standard poll |
-| `npm run backfill` | One poll with backfill |
+| `npm run backfill -- 14` | One bounded backfill (1–30 days; omit argument for 7) |
 | `npm start` | Poll immediately and every 120 minutes by default |
 
 The long-running process skips overlapping polls. Use only one deployment per state database and Discord destination to avoid competing notification queues.
@@ -91,7 +99,7 @@ All configured sources share one read-only HTTP client. Requests must use HTTPS 
 | Permanent HTTP errors, invalid JSON or incompatible schema | Fail without retry |
 | Redirect or oversized response | Reject immediately without following or retrying |
 
-An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Preview restores and reads saved cooldowns but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle/SmartRecruiters two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
+An active host cooldown prevents new requests to that host, even across employer boards sharing it. Production cooldowns are saved as hostnames and expiry timestamps in SQLite and restored on later workflow runs. Local preview reads saved cooldowns if a database is available but does not persist new observations; do not repeatedly run previews to probe a throttled provider. Workday has a four-minute per-employer deadline, and Oracle/SmartRecruiters two minutes; deadline cancellation stops both HTTP requests and retry sleeps. These are conservative local limits, not a claim that providers allow this traffic. Disable persistently blocked sources rather than using alternate endpoints or attempting to circumvent restrictions.
 
 ## State and recovery
 
@@ -107,7 +115,7 @@ Normalized posting fields are bounded before persistence. Discord payloads show 
 
 | Symptom | What to check |
 | --- | --- |
-| Green workflow, no Discord messages | Inspect `delivery_queue` and `no_notifications`. Use backfill for seeded matches and test-webhook for independent connectivity. |
+| Green workflow, no Discord messages | Inspect `delivery_queue` and `no_notifications`. Use bounded backfill for recent seeded matches and the local test:webhook command for independent connectivity. |
 | Webhook test fails | Confirm repository secret, URL, intended channel, webhook permissions and any Discord API error code. Rotate a deleted or exposed webhook. |
 | Source HTTP 429 | Check source_http_retry, source_http_deferred and source_http_cooldown. Honour the logged retry time; disable the affected source if throttling persists. |
 | Source HTTP 403 or 404 | Check the provider's public interface, identifier and terms; disable invalid or disallowed sources. |

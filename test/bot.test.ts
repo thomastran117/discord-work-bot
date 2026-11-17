@@ -13,6 +13,7 @@ import { JobsRepository } from "../src/repositories/jobs.ts";
 import { buildPayload, publishJob, webhookUrl, testWebhook } from "../src/services/discord.ts";
 import { runAggregation } from "../src/services/aggregator.ts";
 import { PermanentDeliveryError } from "../src/services/delivery.ts";
+import { backfillWindow } from "../src/services/backfill.ts";
 
 const job: Job = { source: "alpha", externalId: "1", title: "Software Engineer - New Grad", company: "Example", locations: ["Toronto, ON"], url: "https://job-boards.greenhouse.io/example/jobs/123" };
 test("classifies Canadian SWE roles without generic remote or senior/intern roles", () => {
@@ -128,16 +129,17 @@ test("pipeline isolates source failures and retries persisted undelivered jobs",
 
 test("backfill queues current seeded jobs without replaying sent or absent jobs", async () => {
   const db = new JobsRepository(":memory:");
-  const absent = { ...job, externalId: "absent", url: "https://example.com/absent" };
-  const sent = { ...job, externalId: "sent", url: "https://example.com/sent" };
+  const recent = { ...job, postedAt: "2026-11-16T12:00:00.000Z" };
+  const absent = { ...recent, externalId: "absent", url: "https://example.com/absent" };
+  const sent = { ...recent, externalId: "sent", url: "https://example.com/sent" };
   try {
-    db.ingest("alpha", [job, absent], true);
+    db.ingest("alpha", [recent, absent], true);
     db.ingest("alpha", [sent], true);
     db.markSent(db.pending(1)[0].id, "previous-message");
     assert.deepEqual(db.counts(), { pending: 0, seeded: 2, sent: 1, rejected: 0 });
-    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [job, sent]; } }];
+    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [recent, sent]; } }];
     const delivered: string[] = [];
-    const options = { repository: db, seedFirst: true, backfill: true, maxNotifications: 25,
+    const options = { repository: db, seedFirst: true, backfill: backfillWindow(7, Date.parse("2026-11-17T00:00:00Z")), maxNotifications: 25,
       publish: async (item: Job) => { delivered.push(item.externalId); return "new-message"; } };
     assert.equal((await runAggregation(sources, options)).delivered, 1);
     assert.deepEqual(delivered, [job.externalId]);
@@ -149,12 +151,13 @@ test("backfill queues current seeded jobs without replaying sent or absent jobs"
 test("backfill bypasses first-run seeding and honours the delivery cap", async () => {
   const db = new JobsRepository(":memory:");
   try {
-    const other = { ...job, externalId: "other", url: "https://example.com/other" };
-    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [job, other]; } }];
-    const options = { repository: db, seedFirst: true, backfill: true, maxNotifications: 1, publish: async () => "42" };
+    const recent = { ...job, postedAt: "2026-11-16T12:00:00.000Z" };
+    const other = { ...recent, externalId: "other", url: "https://example.com/other" };
+    const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [recent, other]; } }];
+    const options = { repository: db, seedFirst: true, backfill: backfillWindow(7, Date.parse("2026-11-17T00:00:00Z")), maxNotifications: 1, publish: async () => "42" };
     assert.equal((await runAggregation(sources, options)).delivered, 1);
     assert.equal(db.counts().pending, 1);
-    assert.equal((await runAggregation(sources, { ...options, backfill: false })).delivered, 1);
+    assert.equal((await runAggregation(sources, { ...options, backfill: undefined })).delivered, 1);
     assert.deepEqual(db.counts(), { pending: 0, seeded: 0, sent: 2, rejected: 0 });
   } finally { db.close(); }
 });

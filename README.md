@@ -12,7 +12,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 - Canadian location and early-career SWE filtering.
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
-- Manual preview, webhook test and backfill modes.
+- Scheduled or manual polling, and bounded 1–30 day backfill.
 
 ## Quick start
 
@@ -21,10 +21,9 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 1. Fork or use your own copy of this repository. Enable Actions if necessary.
 2. Create a Discord webhook via **Edit Channel → Integrations → Webhooks**.
 3. Add the webhook URL as the repository Actions secret `DISCORD_WEBHOOK_URL` under **Settings → Secrets and variables → Actions**.
-4. Open **Actions → Canadian new-grad job bot → Run workflow**, select your default branch, and run `test-webhook`, then `preview`.
-5. Run `poll` to seed existing jobs silently, or `backfill` to start publishing existing eligible jobs.
+4. Open **Actions → Canadian new-grad job bot → Run workflow** on your default branch. Use `poll` (default) to start monitoring, or select `backfill` with `backfill_days` set to 1–30 (default 7).
 
-Scheduled runs execute automatically every two hours (best effort). New jobs only are sent on subsequent normal polls.
+Scheduled runs execute automatically every two hours (best effort). First normal polls seed existing listings by default; subsequent polls send new jobs. Backfill only queues recent dated postings that have not been sent.
 
 > **Important:** In a public repository, the `bot-state` branch and workflow logs are public. Never commit webhook secrets or delete the state branch. Review source terms before enabling collection.
 

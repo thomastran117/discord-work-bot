@@ -33,4 +33,4 @@ Never commit `.env`, webhook URLs, database files or private source data. Use fi
 
 Create a focused branch from the default branch. Include the purpose, changes, relevant tests, live verification status and any risks. Keep new sources configurable and preserve existing notification state. The CI workflow runs the Node tests plus a local Git/SQLite state test.
 
-Avoid making live webhook requests in tests or resetting the shared state branch. If a feature requires a live sample, use a dedicated test channel or the explicit webhook-test workflow. See [operations](docs/operations.md) for deployment and [architecture](docs/architecture.md) for the pipeline.
+Avoid making live webhook requests in tests or resetting the shared state branch. If a feature requires a live sample, use a dedicated test channel or the local `npm run test:webhook` command. See [operations](docs/operations.md) for deployment and [architecture](docs/architecture.md) for the pipeline.

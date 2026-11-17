@@ -6,14 +6,17 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Choose preview, webhook test, normal poll, or backfill current seeded jobs
+        description: Poll for newly discovered jobs, or backfill recent postings
         type: choice
-        default: preview
+        default: poll
         options:
-          - preview
-          - test-webhook
           - poll
           - backfill
+      backfill_days:
+        description: Days to look back (1–30; ignored for poll)
+        type: number
+        required: false
+        default: 7
 
 permissions:
   contents: read
@@ -23,43 +26,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  preview:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'preview'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - name: Set preview database location
-        run: echo "DATABASE_PATH=$RUNNER_TEMP/discord-job-bot/jobs.db" >> "$GITHUB_ENV"
-      - name: Restore saved cooldowns (read only)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/workflow-state.sh restore
-      - run: npm run preview
-
-  test-webhook:
-    if: github.ref_name == github.event.repository.default_branch && github.event_name == 'workflow_dispatch' && inputs.mode == 'test-webhook'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          package-manager-cache: false
-      - name: Send a sample Discord job card
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: npm run test:webhook
-
   poll:
     if: github.ref_name == github.event.repository.default_branch && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'poll' || inputs.mode == 'backfill')))
     runs-on: ubuntu-24.04
@@ -78,6 +44,15 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Validate requested operation
+        env:
+          RUN_MODE: ${{ inputs.mode || 'poll' }}
+          BACKFILL_DAYS: ${{ inputs.backfill_days }}
+        run: |
+          if [[ "$RUN_MODE" == backfill && ! "$BACKFILL_DAYS" =~ ^([1-9]|[12][0-9]|30)$ ]]; then
+            echo "::error::Backfill days must be a whole number from 1 to 30."
+            exit 1
+          fi
       - name: Set database location
         run: echo "DATABASE_PATH=$RUNNER_TEMP/discord-job-bot/jobs.db" >> "$GITHUB_ENV"
       - name: Restore persistent state
@@ -90,14 +65,15 @@ jobs:
         timeout-minutes: 20
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RUN_MODE: ${{ inputs.mode }}
+          RUN_MODE: ${{ inputs.mode || 'poll' }}
+          BACKFILL_DAYS: ${{ inputs.backfill_days }}
         run: |
           if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
             echo "::error::Set the DISCORD_WEBHOOK_URL repository Actions secret."
             exit 1
           fi
           if [[ "$RUN_MODE" == backfill ]]; then
-            npm run backfill
+            npm run backfill -- "$BACKFILL_DAYS"
           else
             npm run once
           fi
