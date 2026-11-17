@@ -2,11 +2,14 @@ import type { Job, JobSource } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, strings, plain, iso } from "../utils/http.ts";
 import { isCanadian } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
+import { fetchSmartRecruiters } from "./smartrecruiters.ts";
 
 export const CAREERS = {
   ciena: { provider: "workday", company: "Ciena", origin: "https://ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers" },
   rbc: { provider: "workday", company: "RBC", origin: "https://rbc.wd3.myworkdayjobs.com", tenant: "rbc", site: "RBCGLOBAL1" },
-  nokia: { provider: "oracle", company: "Nokia", origin: "https://fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com", site: "CX_1", canadaId: "300000000471544" }
+  nokia: { provider: "oracle", company: "Nokia", origin: "https://fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com", site: "CX_1", canadaId: "300000000471544" },
+  sap: { provider: "smartrecruiters", company: "SAP", tenant: "SAPITBusinessSysteme" },
+  autodesk: { provider: "workday", company: "Autodesk", origin: "https://autodesk.wd1.myworkdayjobs.com", tenant: "autodesk", site: "Ext" }
 } as const;
 export type CareerId = keyof typeof CAREERS;
 type WorkdayBoard = Extract<typeof CAREERS[CareerId], { provider: "workday" }>;
@@ -29,6 +32,14 @@ function stringId(value: unknown): string {
   return typeof value === "number" && Number.isSafeInteger(value) ? String(value) : str(value);
 }
 
+// Autodesk uses explicit ISO alpha-3 markers such as "Toronto-ON-CAN".
+// Do not interpret the ambiguous US/Canada abbreviation CA as Canada.
+function workdayLocation(company: string, label: string): string {
+  if (company === "Autodesk" && /(?:^|[\s,-])CAN(?=$|[\s,-])/.test(label))
+    return label.replace(/(?:,\s*|\s*-\s*|\s+)CAN(?=$|[\s,-])/, ", Canada").replace(/^CAN$/, "Canada");
+  return label;
+}
+
 export function parseWorkdayList(board: WorkdayBoard, payload: unknown): { total: number; jobs: Job[] } {
   const root = record(payload);
   if (typeof root.total !== "number" || !Number.isSafeInteger(root.total) || root.total < 0)
@@ -41,7 +52,7 @@ export function parseWorkdayList(board: WorkdayBoard, payload: unknown): { total
     if (!path || !title) throw new Error("Unexpected Workday posting shape");
     return {
       source: "workday:" + board.tenant, company: board.company,
-      externalId: req || path, title, locations: [str(row.locationsText)].filter(Boolean),
+      externalId: req || path, title, locations: [workdayLocation(board.company, str(row.locationsText))].filter(Boolean),
       url: board.origin + "/" + board.site + path,
       requisitionKey: req ? board.company.toLowerCase() + ":" + req : undefined
     };
@@ -53,10 +64,10 @@ export function enrichWorkday(job: Job, payload: unknown): Job {
   const info = record(record(payload).jobPostingInfo);
   if (!str(info.title)) throw new Error("Unexpected Workday detail shape");
   const req = str(info.jobReqId);
-  const location = str(info.location);
+  const location = workdayLocation(job.company, str(info.location));
   const country = str(record(record(info.jobRequisitionLocation).country).alpha2Code);
   const primary = country === "CA" && location && !isCanadian(location) ? location + ", Canada" : location;
-  const locations = [primary, ...strings(info.additionalLocations)].filter(Boolean);
+  const locations = [primary, ...strings(info.additionalLocations).map(value => workdayLocation(job.company, value))].filter(Boolean);
   return { ...job, title: str(info.title), locations: locations.length ? locations : job.locations,
     description: plain(info.jobDescription), employmentType: str(info.timeType),
     // Workday's startDate is a posting date, not a candidate's start date.
@@ -162,6 +173,10 @@ export function careerSource(id: CareerId, http = new SourceHttpClient()): JobSo
     // Allow time for the deliberate request pacing while bounding the entire
     // search. The signal also cancels retry sleeps and detail requests.
     const deadline = AbortSignal.timeout(board.provider === "workday" ? 240_000 : 120_000);
-    return board.provider === "workday" ? fetchWorkday(board, http, deadline) : fetchOracle(board, http, deadline);
+    switch (board.provider) {
+      case "workday": return fetchWorkday(board, http, deadline);
+      case "oracle": return fetchOracle(board, http, deadline);
+      case "smartrecruiters": return fetchSmartRecruiters(board, http, deadline);
+    }
   } };
 }

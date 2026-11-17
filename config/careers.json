@@ -10,5 +10,13 @@
   {
     "id": "nokia",
     "enabled": true
+  },
+  {
+    "id": "sap",
+    "enabled": true
+  },
+  {
+    "id": "autodesk",
+    "enabled": true
   }
 ]

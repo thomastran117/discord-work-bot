@@ -23,6 +23,7 @@ const SOURCE_LABELS: Record<string, string> = {
   ashby: "Ashby",
   workday: "Employer careers",
   oracle: "Employer careers",
+  smartrecruiters: "Employer careers",
   "vansh-canada": "Vansh New-Grad Canada",
   "grind-canada": "Grind",
   "intern-radar": "Intern Radar",
