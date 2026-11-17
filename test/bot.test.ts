@@ -6,12 +6,13 @@ import { join } from "node:path";
 import type { Job, JobSource } from "../src/models/job.ts";
 import { eligible, isCanadian } from "../src/services/classifier.ts";
 import { extractStartDate } from "../src/services/enrichment.ts";
-import { normalizeUrl, urlIdentity, normalizeJob } from "../src/services/identity.ts";
+import { JOB_LIMITS, normalizeUrl, urlIdentity, normalizeJob } from "../src/services/identity.ts";
 import { parseSimplify } from "../src/sources/simplify.ts";
 import { parseBoard, boardUrl } from "../src/sources/ats.ts";
 import { JobsRepository } from "../src/repositories/jobs.ts";
 import { buildPayload, publishJob, webhookUrl, testWebhook } from "../src/services/discord.ts";
 import { runAggregation } from "../src/services/aggregator.ts";
+import { PermanentDeliveryError } from "../src/services/delivery.ts";
 
 const job: Job = { source: "alpha", externalId: "1", title: "Software Engineer - New Grad", company: "Example", locations: ["Toronto, ON"], url: "https://job-boards.greenhouse.io/example/jobs/123" };
 test("classifies Canadian SWE roles without generic remote or senior/intern roles", () => {
@@ -35,6 +36,12 @@ test("normalizes tracking parameters and ATS URLs while retaining job IDs", () =
   assert.equal(normalizeUrl("https://example.com/apply?utm_source=a&job=3#x"), "https://example.com/apply?job=3");
   assert.equal(urlIdentity(job.url), urlIdentity("https://boards.greenhouse.io/example/jobs/123?gh_src=a"));
   assert.throws(() => normalizeUrl("javascript:alert(1)"));
+  assert.throws(() => normalizeUrl("http://example.com/apply"), /Invalid application URL/);
+  assert.throws(() => normalizeUrl("https://localhost/apply"), /Invalid application URL/);
+  assert.throws(() => normalizeUrl("https://localhost./apply"), /Invalid application URL/);
+  assert.throws(() => normalizeUrl("https://127.0.0.1/apply"), /Invalid application URL/);
+  assert.throws(() => normalizeUrl("https://[::1]/apply"), /Invalid application URL/);
+  assert.throws(() => normalizeUrl("https://example.com/?x=" + "a".repeat(JOB_LIMITS.url)), /Invalid application URL/);
   assert.deepEqual(normalizeJob({ ...job, locations: ["Toronto, ON", "Seattle, WA"] }).locations, ["Toronto, ON"]);
 });
 test("Simplify parser includes only visible active rows", () => {
@@ -80,7 +87,10 @@ test("webhook payload includes required fields and disables mentions", async () 
   assert.equal(embed.title, job.title);
   assert.equal(embed.url, job.url);
   assert.equal(embed.color, 0x5865f2);
-  assert.deepEqual(embed.fields, [{ name: "📍 Location", value: "Toronto, ON", inline: false }]);
+  assert.deepEqual(embed.fields, [
+    { name: "📍 Location", value: "Toronto, ON", inline: false },
+    { name: "Destination", value: "job-boards.greenhouse.io", inline: false }
+  ]);
   assert.equal(embed.footer.text, "via alpha");
   assert.equal(JSON.stringify(payload).includes("September 2027"), false);
   assert.deepEqual(payload.components, [{ type: 1, components: [{ type: 2, style: 5, label: "View posting", url: job.url }] }]);
@@ -89,6 +99,7 @@ test("webhook payload includes required fields and disables mentions", async () 
   assert.equal(url.searchParams.get("with_components"), "true");
   assert.deepEqual(payload.allowed_mentions.parse, []);
   assert.throws(() => webhookUrl("https://example.com/api/webhooks/1/token"));
+  assert.equal(webhookUrl("https://discord.com/api/webhooks/1/test-token?thread_id=123").searchParams.get("thread_id"), "123");
   const request = async (_url: URL | RequestInfo, init?: RequestInit) => {
     assert.equal(init?.method, "POST");
     return Response.json({ id: "42" });
@@ -123,14 +134,14 @@ test("backfill queues current seeded jobs without replaying sent or absent jobs"
     db.ingest("alpha", [job, absent], true);
     db.ingest("alpha", [sent], true);
     db.markSent(db.pending(1)[0].id, "previous-message");
-    assert.deepEqual(db.counts(), { pending: 0, seeded: 2, sent: 1 });
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 2, sent: 1, rejected: 0 });
     const sources: JobSource[] = [{ name: "alpha", async fetchJobs() { return [job, sent]; } }];
     const delivered: string[] = [];
     const options = { repository: db, seedFirst: true, backfill: true, maxNotifications: 25,
       publish: async (item: Job) => { delivered.push(item.externalId); return "new-message"; } };
     assert.equal((await runAggregation(sources, options)).delivered, 1);
     assert.deepEqual(delivered, [job.externalId]);
-    assert.deepEqual(db.counts(), { pending: 0, seeded: 1, sent: 2 });
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 1, sent: 2, rejected: 0 });
     assert.equal((await runAggregation(sources, options)).delivered, 0);
   } finally { db.close(); }
 });
@@ -144,7 +155,7 @@ test("backfill bypasses first-run seeding and honours the delivery cap", async (
     assert.equal((await runAggregation(sources, options)).delivered, 1);
     assert.equal(db.counts().pending, 1);
     assert.equal((await runAggregation(sources, { ...options, backfill: false })).delivered, 1);
-    assert.deepEqual(db.counts(), { pending: 0, seeded: 0, sent: 2 });
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 0, sent: 2, rejected: 0 });
   } finally { db.close(); }
 });
 
@@ -166,14 +177,77 @@ test("webhook test sends one harmless message and reports safe API errors", asyn
 
 test("Discord card handles missing and multiple locations and friendly source labels", () => {
   const multi = buildPayload({ ...job, source: "greenhouse:example", locations: [" Toronto, ON ", "Waterloo, ON", "Toronto, ON"] });
-  assert.deepEqual(multi.embeds[0].fields, [{ name: "📍 Locations", value: "Toronto, ON\nWaterloo, ON", inline: false }]);
+  assert.deepEqual(multi.embeds[0].fields, [
+    { name: "📍 Locations", value: "Toronto, ON\nWaterloo, ON", inline: false },
+    { name: "Destination", value: "job-boards.greenhouse.io", inline: false }
+  ]);
   assert.equal(multi.embeds[0].footer.text, "via Greenhouse");
   assert.equal(buildPayload({ ...job, source: "simplify" }).embeds[0].footer.text, "via SimplifyJobs");
   assert.equal(buildPayload({ ...job, locations: [] }).embeds[0].fields[0].value, "Not specified");
-  assert.equal(buildPayload({ ...job, locations: ["x".repeat(2000)] }).embeds[0].fields[0].value.length, 1024);
+  assert.throws(() => buildPayload({ ...job, locations: ["x".repeat(JOB_LIMITS.location + 1)] }), /Invalid job field: location/);
   const longUrl = "https://example.com/apply?job=" + "x".repeat(600);
   const long = buildPayload({ ...job, url: longUrl });
   assert.equal(long.components, undefined);
   assert.equal(long.embeds[0].url, longUrl);
+  assert.throws(() => buildPayload({ ...job, url: "https://example.com/?x=" + "x".repeat(JOB_LIMITS.url) }), /Invalid application URL/);
   assert.throws(() => buildPayload({ ...job, url: "javascript:alert(1)" }), /Invalid application URL/);
+});
+
+test("permanent Discord payload failures are quarantined without blocking later jobs", async () => {
+  const db = new JobsRepository(":memory:");
+  const invalid = { ...job, externalId: "invalid", url: "https://example.com/invalid" };
+  const valid = { ...job, externalId: "valid", url: "https://example.com/valid" };
+  try {
+    const result = await runAggregation([{ name: "alpha", async fetchJobs() { return [invalid, valid]; } }], {
+      repository: db, seedFirst: false, maxNotifications: 10,
+      publish: async item => {
+        if (item.externalId === "invalid") throw new PermanentDeliveryError("Discord HTTP 400 (API code 50035)");
+        return "message-id";
+      }
+    });
+    assert.equal(result.deliveryFailed, false);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.rejected, 1);
+    assert.deepEqual(db.counts(), { pending: 0, seeded: 0, sent: 1, rejected: 1 });
+    assert.equal(db.pending(10).length, 0);
+  } finally { db.close(); }
+});
+
+test("Discord classifies invalid payload responses as permanent", async () => {
+  const webhook = webhookUrl("https://discord.com/api/webhooks/1/test-token");
+  for (const [status, code] of [[400, 40005], [400, 50035], [413, 0]] as const) {
+    await assert.rejects(
+      publishJob(webhook, job, (async () => Response.json({ code }, { status })) as typeof fetch),
+      PermanentDeliveryError
+    );
+  }
+  await assert.rejects(
+    publishJob(webhook, { ...job, url: "http://example.com/legacy" }),
+    PermanentDeliveryError
+  );
+});
+
+test("Discord destination errors remain pending instead of quarantining jobs", async () => {
+  const webhook = webhookUrl("https://discord.com/api/webhooks/1/test-token");
+  const destinationFailure = (async () =>
+    Response.json({ code: 220001, message: "Webhooks posted to forum channels must have a thread_name or thread_id" },
+      { status: 400 })) as typeof fetch;
+  await assert.rejects(publishJob(webhook, job, destinationFailure), error => {
+    assert.ok(error instanceof Error);
+    assert.equal(error instanceof PermanentDeliveryError, false);
+    assert.match(error.message, /Discord HTTP 400 \(API code 220001\)/);
+    return true;
+  });
+
+  const db = new JobsRepository(":memory:");
+  try {
+    const result = await runAggregation([{ name: "alpha", async fetchJobs() { return [job]; } }], {
+      repository: db, seedFirst: false, maxNotifications: 10,
+      publish: item => publishJob(webhook, item, destinationFailure)
+    });
+    assert.equal(result.deliveryFailed, true);
+    assert.equal(result.rejected, 0);
+    assert.deepEqual(db.counts(), { pending: 1, seeded: 0, sent: 0, rejected: 0 });
+    assert.equal(db.pending(10).length, 1);
+  } finally { db.close(); }
 });

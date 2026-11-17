@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SourceHttpClient, SourceCooldownError, retryAfterMs, retryableStatus } from "../src/utils/http.ts";
+import { SOURCE_DATA_LIMITS, SourceHttpClient, SourceCooldownError, retryAfterMs, retryableStatus, rows } from "../src/utils/http.ts";
 import { JobsRepository, readSourceCooldowns } from "../src/repositories/jobs.ts";
 import { atsSource } from "../src/sources/ats.ts";
 import { curatedSource } from "../src/sources/curated.ts";
@@ -93,6 +93,26 @@ test("permanent HTTP errors and invalid JSON do not retry", async () => {
   const f = fixture([new Response("not json")]);
   await assert.rejects(f.http.getJson(url), /Invalid source response body/);
   assert.equal(f.calls.length, 1);
+});
+test("source redirects and oversized responses are rejected without retry", async () => {
+  const redirected = fixture([status(302)]);
+  await assert.rejects(redirected.http.getJson(url), /redirects are not allowed/);
+  assert.equal(redirected.calls.length, 1);
+  assert.equal(redirected.calls[0].init?.redirect, "manual");
+
+  const declared = fixture([new Response("x", { headers: { "Content-Length": String(SOURCE_DATA_LIMITS.responseBytes + 1) } })]);
+  await assert.rejects(declared.http.getText(url), /response is too large/);
+  assert.equal(declared.calls.length, 1);
+
+  const streamed = fixture([new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new Uint8Array(SOURCE_DATA_LIMITS.responseBytes));
+    controller.enqueue(new Uint8Array(1));
+    controller.close();
+  } }))]);
+  await assert.rejects(streamed.http.getText(url), /response is too large/);
+  assert.equal(streamed.calls.length, 1);
+  await assert.rejects(streamed.http.getText("http://example.com/jobs"), /Invalid source URL/);
+  assert.throws(() => rows(Array(SOURCE_DATA_LIMITS.rawRows + 1).fill({})), /too many rows/);
 });
 test("network retry cap and parent abort prevent endless retries", async () => {
   const f = fixture(Array.from({length: 4}, () => new TypeError("offline")));

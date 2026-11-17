@@ -4,6 +4,11 @@ services:
     restart: unless-stopped
     env_file: .env
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - job-data:/app/data
       - ./config/boards.json:/app/config/boards.json:ro

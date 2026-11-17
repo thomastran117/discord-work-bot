@@ -29,6 +29,11 @@ export class JobsRepository {
       CREATE TABLE IF NOT EXISTS source_cooldowns (
         host TEXT PRIMARY KEY, until_ms INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS delivery_rejections (
+        job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+        reason TEXT NOT NULL,
+        rejected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
       CREATE INDEX IF NOT EXISTS jobs_pending ON jobs(state, first_seen_at);
     `);
   }
@@ -86,21 +91,35 @@ export class JobsRepository {
       .run(host, untilMs);
   }
 
-  counts(): { pending: number; seeded: number; sent: number } {
-    const counts = { pending: 0, seeded: 0, sent: 0 };
-    for (const row of this.db.prepare("SELECT state, COUNT(*) AS count FROM jobs GROUP BY state").all()) {
+  counts(): { pending: number; seeded: number; sent: number; rejected: number } {
+    const counts = { pending: 0, seeded: 0, sent: 0, rejected: 0 };
+    for (const row of this.db.prepare(`
+      SELECT state, COUNT(*) AS count FROM jobs
+      WHERE NOT EXISTS (SELECT 1 FROM delivery_rejections WHERE job_id=jobs.id)
+      GROUP BY state
+    `).all()) {
       counts[String(row.state) as keyof typeof counts] = Number(row.count);
     }
+    counts.rejected = Number(this.db.prepare("SELECT COUNT(*) AS count FROM delivery_rejections").get()!.count);
     return counts;
   }
 
   pending(limit: number): PendingJob[] {
-    return this.db.prepare("SELECT id,payload FROM jobs WHERE state='pending' ORDER BY first_seen_at,id LIMIT ?")
+    return this.db.prepare(`
+      SELECT id,payload FROM jobs WHERE state='pending'
+      AND NOT EXISTS (SELECT 1 FROM delivery_rejections WHERE job_id=jobs.id)
+      ORDER BY first_seen_at,id LIMIT ?
+    `)
       .all(limit).map(row => ({ id: String(row.id), job: JSON.parse(String(row.payload)) as Job }));
   }
 
   markSent(id: string, messageId: string): void {
     this.db.prepare("UPDATE jobs SET state='sent',discord_message_id=?,notified_at=CURRENT_TIMESTAMP WHERE id=? AND state='pending'").run(messageId, id);
+  }
+
+  markRejected(id: string, reason: string): void {
+    this.db.prepare("INSERT OR REPLACE INTO delivery_rejections(job_id,reason) VALUES(?,?)")
+      .run(id, reason.slice(0, 512));
   }
 
   close(): void { this.db.close(); }

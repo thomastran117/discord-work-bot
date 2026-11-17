@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Job } from "../models/job.ts";
+import { normalizeJob } from "./identity.ts";
+import { PermanentDeliveryError } from "./delivery.ts";
 
 export function webhookUrl(input: string): URL {
   const url = new URL(input);
@@ -38,42 +40,45 @@ function escapeMarkdown(value: string): string {
 }
 
 export function buildPayload(job: Job) {
-  const locations = [...new Set(job.locations.map(location => location.trim()).filter(Boolean))];
+  const safe = normalizeJob(job);
+  const locations = safe.locations;
   const locationText = locations.map(escapeMarkdown).join("\n");
-  const applyUrl = new URL(job.url);
-  if (!["https:", "http:"].includes(applyUrl.protocol) || applyUrl.username || applyUrl.password)
-    throw new Error("Invalid application URL");
+  const destination = new URL(safe.url).hostname;
 
   return {
     username: "Canada Job Bot",
     allowed_mentions: { parse: [] },
     embeds: [{
-      author: { name: job.company.slice(0, 256) },
-      title: job.title.slice(0, 256),
-      url: job.url,
+      author: { name: safe.company },
+      title: escapeMarkdown(safe.title).slice(0, 256),
+      url: safe.url,
       color: ACCENT,
       fields: [
         {
           name: locations.length > 1 ? "📍 Locations" : "📍 Location",
           value: locationText.slice(0, 1024) || "Not specified",
           inline: false
-        }
+        },
+        { name: "Destination", value: escapeMarkdown(destination), inline: false }
       ],
-      footer: { text: ("via " + sourceLabel(job.source)).slice(0, 2048) }
+      footer: { text: ("via " + sourceLabel(safe.source)).slice(0, 2048) }
     }],
     // Discord link buttons are limited to 512-character URLs. Longer links
     // remain accessible from the embed title without a redundant button.
-    ...(job.url.length <= 512 ? {
+    ...(safe.url.length <= 512 ? {
       components: [{
         type: 1,
-        components: [{ type: 2, style: 5, label: "View posting", url: job.url }]
+        components: [{ type: 2, style: 5, label: "View posting", url: safe.url }]
       }]
     } : {})
   };
 }
 
-export function publishJob(webhook: URL, job: Job, request = fetch): Promise<string> {
-  return executeWebhook(webhook, buildPayload(job), request);
+export async function publishJob(webhook: URL, job: Job, request = fetch): Promise<string> {
+  let payload: ReturnType<typeof buildPayload>;
+  try { payload = buildPayload(job); }
+  catch { throw new PermanentDeliveryError("Invalid job notification payload"); }
+  return executeWebhook(webhook, payload, request);
 }
 
 export function testWebhook(webhook: URL, request = fetch): Promise<string> {
@@ -111,8 +116,15 @@ async function executeWebhook(webhook: URL, payload: object, request: typeof fet
     if (!response.ok) {
       // Discord's numeric API error code is useful without logging the response body or token.
       const body = await response.json().catch(() => ({}));
-      const code = typeof body?.code === "number" ? " (API code " + body.code + ")" : "";
-      throw new Error("Discord HTTP " + response.status + code);
+      const apiCode = typeof body?.code === "number" ? body.code : undefined;
+      const code = apiCode === undefined ? "" : " (API code " + apiCode + ")";
+      const message = "Discord HTTP " + response.status + code;
+      // Quarantine only errors tied to this job payload. Other 4xx responses
+      // can describe webhook, channel, permission or thread configuration and
+      // must remain pending so a configuration fix can recover the queue.
+      if (response.status === 413 || apiCode === 40005 || apiCode === 50035)
+        throw new PermanentDeliveryError(message);
+      throw new Error(message);
     }
     const message = await response.json();
     if (typeof message.id !== "string") throw new Error("Discord response missing message ID");

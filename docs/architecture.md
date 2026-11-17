@@ -45,11 +45,11 @@ The webhook-test mode skips this pipeline entirely and sends one fictional sampl
 
 Adapters implement `JobSource` with a stable name and `fetchJobs(): Promise<Job[]>`. They provide an external ID, title, company, locations and application URL; optional fields include description, employment type, early-career signal, posted date, start date and requisition key.
 
-The classifier runs before full descriptions are removed from normalized records. Start-date metadata is kept internally but intentionally omitted from Discord cards. A job card displays its employer, clickable role, Canadian locations, source and a native View posting link (when the URL fits the button limit).
+Jobs are normalized and bounded before classification. Application links must use HTTPS, cannot contain credentials or custom ports, and cannot target literal IP or localhost addresses. Bidirectional text controls are removed from display metadata. The classifier runs before full descriptions are removed from normalized records. Start-date metadata is kept internally but intentionally omitted from Discord cards. A job card displays its employer, clickable role, Canadian locations, destination hostname, source and a native View posting link (when the URL fits the button limit).
 
 ## Persistence and identity
 
-SQLite contains four main tables:
+SQLite contains five main tables:
 
 | Table | Purpose |
 | --- | --- |
@@ -57,6 +57,7 @@ SQLite contains four main tables:
 | `identities` | Unique source IDs, normalized URL identities and optional requisition keys mapped to jobs |
 | `sources` | Initialized source names, enabling per-source first-run behaviour |
 | `source_cooldowns` | Per-host retry-not-before timestamps (additive migration) |
+| `delivery_rejections` | Permanently invalid Discord payloads excluded from later queue reads |
 
 Ingestion is transactional. The system prefers known identifiers, strips common tracking parameters and normalizes recognized ATS URL aliases. It does not merge ambiguous matches based on company and role alone. Aliases introduced after a job was stored may not be linked until the original posting is observed again.
 
@@ -67,13 +68,14 @@ stateDiagram-v2
     seeded --> pending: Explicit backfill sees eligible job
     pending --> pending: Delivery fails or is deferred
     pending --> sent: Discord confirms message ID
+    pending --> rejected: Discord rejects payload permanently
 ~~~
 
 An empty but successful source response can initialize that source. A failed source does not initialize its first-run history. Backfill only requeues seeded jobs observed as eligible during the run; already-sent records remain sent.
 
 ## Delivery and reliability
 
-Each poll fetches sources sequentially to limit load. Individual source failures are isolated. A shared source HTTP client paces requests per host, uses bounded exponential retry with jitter and honours Retry-After. Long waits or exhausted rate limits defer a host, with cooldown state saved to SQLite between production runs. See [operations](operations.md#source-retry-and-rate-limit-policy). The maximum number of pending jobs delivered per run is configurable. Discord uses `wait=true` to obtain a message ID before recording success; rate-limit responses are handled with bounded waits and ambiguous network failures are deferred.
+Each poll fetches sources sequentially to limit load. Individual source failures are isolated. Source responses are restricted to 16 MiB and 25,000 raw rows, adapters may return at most 10,000 jobs, redirects are rejected, and normalized fields have explicit size and count limits. A shared source HTTP client paces requests per host, uses bounded exponential retry with jitter and honours Retry-After. Long waits or exhausted rate limits defer a host, with cooldown state saved to SQLite between production runs. See [operations](operations.md#source-retry-and-rate-limit-policy). The maximum number of pending jobs delivered per run is configurable. Discord uses `wait=true` to obtain a message ID before recording success; rate-limit responses and ambiguous network failures are deferred. Local payload validation failures and narrowly identified job-payload errors are quarantined so a single bad posting cannot block the queue. Destination, permission, webhook and thread-configuration errors remain pending and stop the pass so configuration fixes can recover delivery.
 
 GitHub Actions serializes runs and restores SQLite from `bot-state` before executing the one-shot command. A final save step runs even after ordinary partial failures, uses SQLite backup and integrity checking, and does not overwrite divergent state. A runner crash, cancellation or failed save can still lose confirmations. Discord and SQLite/Git cannot participate in one atomic transaction, so exactly-once delivery is not guaranteed.
 
@@ -81,7 +83,7 @@ GitHub Actions serializes runs and restores SQLite from `bot-state` before execu
 
 - Heuristic filtering, incomplete employment type/location metadata and bounded career searches can miss or misclassify openings.
 - Different application URLs for identical requisitions can evade deduplication; no fuzzy matching or general redirect resolution.
-- No stale-pending expiry, closed-job reconciliation or automatic source-health alerts.
+- No stale-pending expiry, closed-job reconciliation, rejected-job repair UI or automatic source-health alerts.
 - No separate static TypeScript compiler/type-checking step; tests run with native Node type stripping.
 - Git-backed state history can grow as jobs accumulate. Public state must remain free of secrets and restricted data.
 
