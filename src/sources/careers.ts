@@ -1,6 +1,6 @@
 import type { Job, JobSource } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, strings, plain, iso } from "../utils/http.ts";
-import { isCanadian } from "../services/classifier.ts";
+import { isCanadian, isMechanicalCandidate } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 import { fetchSmartRecruiters } from "./smartrecruiters.ts";
 
@@ -8,7 +8,9 @@ export const CAREERS = {
   ciena: { provider: "workday", company: "Ciena", origin: "https://ciena.wd5.myworkdayjobs.com", tenant: "ciena", site: "Careers" },
   rbc: { provider: "workday", company: "RBC", origin: "https://rbc.wd3.myworkdayjobs.com", tenant: "rbc", site: "RBCGLOBAL1" },
   nokia: { provider: "oracle", company: "Nokia", origin: "https://fa-evmr-saasfaprod1.fa.ocs.oraclecloud.com", site: "CX_1", canadaId: "300000000471544" },
-  sap: { provider: "smartrecruiters", company: "SAP", tenant: "SAPITBusinessSysteme" },
+  sap: { provider: "smartrecruiters", company: "SAP", tenant: "SAPITBusinessSysteme", id: "sap" },
+  aecom: { provider: "smartrecruiters", company: "AECOM", tenant: "AECOM2", id: "aecom" },
+  cima: { provider: "smartrecruiters", company: "CIMA+", tenant: "CIMA2", id: "cima" },
   autodesk: { provider: "workday", company: "Autodesk", origin: "https://autodesk.wd1.myworkdayjobs.com", tenant: "autodesk", site: "Ext" }
 } as const;
 export type CareerId = keyof typeof CAREERS;
@@ -75,9 +77,9 @@ export function enrichWorkday(job: Job, payload: unknown): Job {
     requisitionKey: req ? job.company.toLowerCase() + ":" + req : job.requisitionKey };
 }
 
-export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpClient(), signal?: AbortSignal): Promise<Job[]> {
+export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpClient(), signal?: AbortSignal, mechanicalEnabled = false): Promise<Job[]> {
   const seen = new Map<string, Job>();
-  for (const keyword of keywords) {
+  for (const keyword of mechanicalEnabled ? [...keywords, "mechanical", "manufacturing", "mechatronics", "mécanique"] : keywords) {
     let offset = 0;
     for (let page = 0; page < maxPages; page++) {
       const raw = await http.postSearchJson(workdayBase(board) + "/jobs", {
@@ -91,7 +93,7 @@ export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpCli
       if (page === maxPages - 1) log("warn", "career_search_capped", { source: board.tenant, keyword, total, scanned: offset });
     }
   }
-  const candidates = [...seen.values()].filter(job => technical.test(job.title) && !excluded.test(job.title) &&
+  const candidates = [...seen.values()].filter(job => (technical.test(job.title) || (mechanicalEnabled && isMechanicalCandidate(job.title))) && !excluded.test(job.title) &&
     (job.locations.some(isCanadian) || job.locations.some(value => multiLocation.test(value)) || !job.locations.length));
   // Prefer explicit early-career roles when the per-source detail budget is reached.
   const priority = (job: Job) => /\b(new[- ]grad|junior|early[- ]career|entry[- ]level|associate|engineer i|developer i)\b/i.test(job.title) ? 0 : 1;
@@ -166,7 +168,7 @@ export async function fetchOracle(board: OracleBoard, http = new SourceHttpClien
   throw new Error("Oracle search exceeded the bounded page budget");
 }
 
-export function careerSource(id: CareerId, http = new SourceHttpClient()): JobSource {
+export function careerSource(id: CareerId, http = new SourceHttpClient(), mechanicalEnabled = false): JobSource {
   const board = CAREERS[id];
   const name = board.provider + ":" + id;
   return { name, async fetchJobs() {
@@ -174,9 +176,9 @@ export function careerSource(id: CareerId, http = new SourceHttpClient()): JobSo
     // search. The signal also cancels retry sleeps and detail requests.
     const deadline = AbortSignal.timeout(board.provider === "workday" ? 240_000 : 120_000);
     switch (board.provider) {
-      case "workday": return fetchWorkday(board, http, deadline);
+      case "workday": return fetchWorkday(board, http, deadline, mechanicalEnabled);
       case "oracle": return fetchOracle(board, http, deadline);
-      case "smartrecruiters": return fetchSmartRecruiters(board, http, deadline);
+      case "smartrecruiters": return fetchSmartRecruiters(board, http, deadline, mechanicalEnabled);
     }
   } };
 }
