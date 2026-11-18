@@ -94,3 +94,7 @@ Future improvements may include reliable employer interfaces with permission, bi
 ## Interactive search service
 
 The separate Railway ask-service exposes GET /health and signed POST /interactions on PORT. It defers Discord commands immediately and reads the public jobs.json index with a one-minute cache and coalesced requests. It has no database access, Git write credential, poller webhook or Discord gateway connection. See [deployment](ask.md).
+
+### Discipline-aware delivery
+
+Classification adds a category field to the existing job payload. Legacy records are SWE. Identity remains global (one job, one stream); explicit software titles take precedence and ambiguous mechanical-adjacent titles require degree evidence. Seeding and pending queues are isolated per category; a delivery failure stops only that stream. The optional mechanical webhook never falls back to the SWE destination. The shared database, lock, backfill and rate-limit policy remain in place; the search snapshot retains its version and adds category metadata.
