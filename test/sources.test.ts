@@ -84,7 +84,8 @@ test("structured Ashby country and experience titles improve direct employer mat
   assert.deepEqual(jobs[0].locations, ["London, ON, Canada", "Ottawa, Canada"]);
   assert.ok(eligible(jobs[0]));
   assert.ok(eligible({ ...jobs[0], title: "SDE I", description: "" }));
-  assert.equal(eligible({ ...jobs[0], title: "Software Developer II" }), false);
+  assert.equal(eligible({ ...jobs[0], title: "Software Developer II" }), true); // description supplies 1–2 years
+  assert.equal(eligible({ ...jobs[0], title: "Software Developer II", description: "" }), false);
 });
 
 test("Markdown HTTP reader sends a text accept header and returns the body", async () => {

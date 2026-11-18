@@ -137,6 +137,10 @@ Normalized posting fields are bounded before persistence. Discord payloads show 
 
 A successful empty poll emits a warning (including a GitHub Actions warning annotation) and exits with code 0. Partial source outages also warn and exit with code 0 if delivery succeeds; this does not imply complete coverage. If all sources fail, or a Discord delivery, configuration or database operation fails, one-shot execution exits nonzero. Existing pending notifications can still be processed when sources fail. Invalid notification payloads are quarantined and warned about, rather than blocking the rest of the queue. Local preview uses the same partial-source policy but does not issue an empty-notification warning. State restore and save failures remain fatal.
 
+### Diagnosing low backfill counts
+
+Check `swe_classification` for per-source rejection counts (location, role, seniority/employment, discipline evidence, experience, early-career evidence, invalid rows). For backfill, `backfill_date_breakdown` separates in-window, too-old, missing, malformed and future posting dates per source/category before deduplication. Compare these with `source_complete` for duplicate/seed/requeue counts and `category_delivery_queue` / `poll_complete` for selected and remaining pending jobs. A run that delivers the configured cap but leaves zero pending is not necessarily cap-limited. Provider outages and unavailable posting dates still limit historical coverage.
+
 ## Troubleshooting
 
 | Symptom | What to check |

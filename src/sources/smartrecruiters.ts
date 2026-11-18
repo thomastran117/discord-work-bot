@@ -1,6 +1,6 @@
 import type { Job } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, plain, iso } from "../utils/http.ts";
-import { isMechanicalCandidate, hasMechanicalEarlyTitle } from "../services/classifier.ts";
+import { isMechanicalCandidate, hasMechanicalEarlyTitle, isSweCandidateTitle } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 
 interface SmartRecruitersBoard {
@@ -59,7 +59,7 @@ export function parseSmartRecruitersPage(board: SmartRecruitersBoard, payload: u
     const id = identifier(row.id), title = str(row.name);
     if (!id || !title) throw new Error("Unexpected SmartRecruiters posting shape");
     const location = countryLocation(row.location);
-    if (!location || row.active === false || isExcluded(row, mechanicalEnabled) || !(technical.test(title) || (mechanicalEnabled && isMechanicalCandidate(title)))) continue;
+    if (!location || row.active === false || isExcluded(row, mechanicalEnabled) || !(technical.test(title) || isSweCandidateTitle(title) || (mechanicalEnabled && isMechanicalCandidate(title)))) continue;
     const level = record(row.experienceLevel);
     jobs.push({
       source: "smartrecruiters:" + board.id, externalId: id, company: board.company, title,

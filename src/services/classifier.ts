@@ -5,6 +5,16 @@ const cities = /\b(toronto|waterloo|kitchener|ottawa|vancouver|montr[eé]al|calg
 const provinceCodes = /(?:,\s*|\(\s*)(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)(?=$|[\s,)])/i;
 const foreign = /\b(united states|usa|u\.s\.|california|washington|texas|new york|united kingdom|uk|australia|india)\b|,\s*(CA|WA|NY|TX|OR|MI|MA|OH|FL|IL|CO|VA|PA|NJ|MD|WI|MN|IN|NC|SC|GA|AZ|NV|CT|TN|MO|IA|ID|UT|NM|KS|OK|AR|LA|MS|AL|KY|NE|ND|SD|MT|WY|WV|VT|NH|ME|RI|DE|HI|AK)(?=$|[,\s)])/i;
 const role = /\b(?:software|backend|back[- ]end|frontend|front[- ]end|full[- ]stack|embedded|firmware|devops|sre|site reliability|platform|infrastructure|cloud|machine learning|data|security|distributed systems|systems|application|mobile|android|ios)\b.{0,35}\b(?:engineer(?:ing)?|developer|programmer)\b|\b(?:software developer|software engineer|swe|sde|devops|sre|développeur|développeuse|programmeur|ingénieur logiciel)\b/i;
+// Include closely related technical roles, rather than requiring the exact
+// words "software engineer". Generic developer/programmer titles still need
+// early-career evidence; broad business/data analyst titles are not SWE.
+const relatedSoftware = /\b(?:software development|web developer|(?:java|python|javascript|typescript|react|angular|c\+\+|c#|\.net|full[- ]?stack|backend|frontend|front[- ]end|back[- ]end|mobile|android|ios|application|api|game|unity|unreal|salesforce)\s+(?:developer|programmer)|(?:developer|programmer)\s+(?:analyst|i|ii|1|2)|sdet|software development engineer in test|(?:test|qa|quality assurance)\s+automation (?:engineer|developer|specialist)|automation test (?:engineer|developer)|(?:data|machine learning|applied|research)\s+scientist|(?:ml|ai)\s+engineer|analytics engineer|(?:cybersecurity|cyber security)\s+engineer)\b/i;
+const softwareEvidence = /\b(?:software|programming|coding|software development|computer science|test automation|automated testing|python|java|javascript|typescript|sql|selenium|playwright|cypress|api testing)\b/i;
+const ambiguousSoftware = /\b(?:qa engineer|qa analyst|quality assurance engineer|quality assurance analyst|test automation engineer|test engineer|automation engineer|test analyst|data analyst|business intelligence developer)\b/i;
+const genericDeveloper = /^(?:(?:junior|jr\.?|associate|graduate|entry[- ]level)\s+)?(?:developer|programmer)(?:\s*[-–—,]\s*.*|\s+(?:i|ii|1|2))?$/i;
+export function isSweCandidateTitle(title: string): boolean {
+  return role.test(title) || relatedSoftware.test(title) || genericDeveloper.test(title) || ambiguousSoftware.test(title);
+}
 const mechanical = /\b(?:mechanical|electro[- ]?mechanical|electrom[eé]canique|mechatronics|m[eé]catronique|manufacturing|fabrication|industrial|automotive|aerospace|a[eé]rospatiale|aeronautical|thermal|hvac|cvac|refrigeration|r[eé]frig[eé]ration|tooling|m[eé]canique)\b/i;
 const adjacent = /\b(?:robotics|robotique|product design|design|process|quality|controls?|test|validation|maintenance|stress|piping|commissioning|fire protection|building services|systems assurance|rams)\b/i;
 const engineering = /\b(?:engineer(?:ing)?|eng\.?|designer|eit|e\.i\.t\.?|ing\.?|ing[eé]nieur(?:e)?|g[eé]nie|concepteur(?:rice)?|cpi)\b/i;
@@ -19,13 +29,13 @@ export function isMechanicalCandidate(title: string): boolean {
   if (mechanical.test(title)) return true;
   return !unrelated.test(title) && (adjacent.test(title) || hasMechanicalEarlyTitle(title));
 }
-const early = /\b(?:new[- ]grad(?:uate)?|recent graduate|university graduate|early[- ]career|entry[- ]level|junior|graduate (?:program|engineer|developer)|associate (?:software|engineer|developer)|(?:engineer|developer|programmer|sde|swe)\s+(?:i|1)|early in career|graduate software)\b|nouveau[x]? diplômé|débutant/i;
+const early = /\b(?:new[- ]grad(?:uate)?|recent graduate|university graduate|early[- ]career|entry[- ]level|junior|graduate (?:program|engineer|developer)|associate (?:software|engineer|developer)|(?:engineer|developer|programmer|sde|swe)\s+(?:i|1)|early in career|graduate software|graduate trainee|graduate program(?:me)?|campus (?:hire|graduate|undergraduate)|university hire|recent grad|jr\.?)\b|nouveau[x]? diplômé|débutant/i;
 // Level numbering varies by company. Level II can be explicitly early
 // career (e.g. Google's Software Developer 2 – Early Career).
 const hardExclusion = /\b(?:senior|staff|principal|manager|director|intern(?:ship)?|co[- ]?op|sr|lead|stagiaire|(?:engineer|developer|sde|swe)\s+(?:iii|iv|3|4)|mid[- ]level|intermediate)\b/i;
 const levelTwo = /\b(?:engineer|developer|sde|swe)\s+(?:ii|2)\b/i;
 const descriptionEarly = /\b(?:new graduates?|recent graduates?|early[- ]career|entry[- ]level|[01]\s*(?:[-–—]|to)\s*[12]\s+years?|[01]\+?\s+years?\s+(?:of\s+)?(?:professional|relevant|software|work)\s+experience)\b/i;
-const experienceHigh = /\b(?:[3-9]|[1-9]\d)\+?\s+years?\s+(?:of\s+)?(?:professional|relevant|software|work|industry)\s+experience\b/i;
+
 
 export function isCanadian(location: string): boolean {
   if (canada.test(location) || provinceCodes.test(location)) return true;
@@ -53,23 +63,50 @@ export function assessMechanical(job: Job): MechanicalAssessment {
   return "early_career_evidence";
 }
 
-export function classifyJob(job: Job): JobCategory | undefined {
-  if (!job.locations.some(isCanadian) || hardExclusion.test(job.title)) return undefined;
-  if (/\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance)\b/i.test(job.employmentType ?? "")) return undefined;
-  if (/\b(?:part[- ]time|contract|temporary)\b/i.test(job.title)) return undefined;
+export type SweAssessment = "matched" | "location" | "seniority_or_employment" | "not_software" | "discipline_evidence" | "experience" | "early_career_evidence";
+
+export function assessSwe(job: Job): SweAssessment {
+  if (!job.locations.some(isCanadian)) return "location";
+  if (hardExclusion.test(job.title) ||
+      /\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance)\b/i.test(job.employmentType ?? "") ||
+      /\b(?:part[- ]?time|contract|temporary)\b/i.test(job.title)) return "seniority_or_employment";
   const description = job.description ?? "";
-  const mechanicalAssessment = assessMechanical(job);
-  if (mechanicalAssessment === "matched") return "mechanical";
-  // Explicit mechanical titles must never fall through into the SWE channel.
-  if (isMechanicalCandidate(job.title) && mechanical.test(job.title)) return undefined;
-  if (!role.test(job.title)) return undefined;
-  // A curated feed's broad isNewGrad signal alone cannot override a level-II
-  // title. Require an explicit early-career title and no contradictory
-  // minimum experience requirement. Mechanical level II remains excluded.
-  if (levelTwo.test(job.title) &&
-      (!early.test(job.title) || experienceMinimums(description).some(years => years >= 3) ||
-        (isMechanicalCandidate(job.title) && !software.test(job.title) && degree.test(description)))) return undefined;
-  return job.isNewGrad === true || early.test(job.title) ||
-    (descriptionEarly.test(description) && !experienceHigh.test(description)) ? "swe" : undefined;
+  if (isMechanicalCandidate(job.title) && mechanical.test(job.title)) return "not_software";
+  if (!isSweCandidateTitle(job.title)) return "not_software";
+  // Generic QA, testing and analyst titles are not necessarily software work.
+  // A technical description or an unambiguous software title is required.
+  if (ambiguousSoftware.test(job.title) &&
+      !software.test(job.title) && !relatedSoftware.test(job.title) && !softwareEvidence.test(description))
+    return "discipline_evidence";
+  if (ambiguousSoftware.test(job.title) && isMechanicalCandidate(job.title) &&
+      degree.test(description) && !software.test(job.title) && !relatedSoftware.test(job.title))
+    return "discipline_evidence";
+
+  const minimums = experienceMinimums(description);
+  const low = minimums.some(years => years <= 2);
+  const high = minimums.some(years => years >= 3);
+  const earlyTitle = early.test(job.title);
+  // Level II remains conditional: explicit early-career title OR credible
+  // 0–2-year description evidence, not the curated feed flag alone.
+  if (levelTwo.test(job.title)) {
+    if (isMechanicalCandidate(job.title) && !software.test(job.title) && degree.test(description))
+      return "discipline_evidence";
+    if (high) return "experience";
+    if (!earlyTitle && !low) return "early_career_evidence";
+  }
+  // A range is interpreted by its minimum, not its upper endpoint; plain
+  // "2 years of experience" and "1–3 years" are legitimate early-career signals.
+  if (high) return "experience";
+  return job.isNewGrad === true || earlyTitle || low || descriptionEarly.test(description)
+    ? "matched" : "early_career_evidence";
+}
+
+export function classifyJob(job: Job): JobCategory | undefined {
+  // Preserve mechanical classification and routing precedence.
+  if (!job.locations.some(isCanadian) || hardExclusion.test(job.title) ||
+      /\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance)\b/i.test(job.employmentType ?? "") ||
+      /\b(?:part[- ]?time|contract|temporary)\b/i.test(job.title)) return undefined;
+  if (assessMechanical(job) === "matched") return "mechanical";
+  return assessSwe(job) === "matched" ? "swe" : undefined;
 }
 export function eligible(job: Job): boolean { return classifyJob(job) !== undefined; }
