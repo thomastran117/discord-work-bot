@@ -14,6 +14,8 @@ function positiveInt(value: string | undefined, fallback: number, max: number): 
 export function loadConfig(env = process.env) {
   const mode = env.FIRST_RUN_MODE ?? "seed";
   if (mode !== "seed" && mode !== "publish") throw new Error("FIRST_RUN_MODE must be seed or publish");
+  const mechanicalMode = env.MECHANICAL_FIRST_RUN_MODE || mode;
+  if (mechanicalMode !== "seed" && mechanicalMode !== "publish") throw new Error("MECHANICAL_FIRST_RUN_MODE must be seed or publish");
   const raw: unknown = JSON.parse(readFileSync(env.BOARDS_PATH || "./config/boards.json", "utf8"));
   if (!Array.isArray(raw)) throw new Error("Boards config must be an array");
   const boards: BoardConfig[] = raw.map(value => {
@@ -23,7 +25,8 @@ export function loadConfig(env = process.env) {
     const region = (str(row.region) || "global") as BoardConfig["region"];
     if (!["greenhouse", "lever", "ashby"].includes(provider) || !company || !/^[a-zA-Z0-9_-]+$/.test(board) ||
         !["global", "eu"].includes(region!) || (region === "eu" && provider !== "lever")) throw new Error("Invalid employer board configuration");
-    return { provider, company, board, region };
+    if (row.mechanicalFocus !== undefined && typeof row.mechanicalFocus !== "boolean") throw new Error("Invalid mechanicalFocus flag");
+    return { provider, company, board, region, ...(row.mechanicalFocus === true ? { mechanicalFocus: true } : {}) };
   });
   const feedRaw: unknown = JSON.parse(readFileSync(env.FEEDS_PATH || "./config/feeds.json", "utf8"));
   if (!Array.isArray(feedRaw)) throw new Error("Feeds config must be an array");
@@ -54,5 +57,5 @@ export function loadConfig(env = process.env) {
   return { boards, feeds, careers, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
     databasePath: env.DATABASE_PATH || "./data/jobs.db", webhook: env.DISCORD_WEBHOOK_URL, mechanicalWebhook: env.DISCORD_MECHANICAL_WEBHOOK_URL || undefined,
     intervalMs: positiveInt(env.POLL_INTERVAL_MINUTES, 120, 1440) * 60_000,
-    maxNotifications: positiveInt(env.MAX_NOTIFICATIONS_PER_RUN, 25, 500), seedFirst: mode === "seed" };
+    maxNotifications: positiveInt(env.MAX_NOTIFICATIONS_PER_RUN, 25, 500), seedFirst: mode === "seed", mechanicalSeedFirst: mechanicalMode === "seed" };
 }
