@@ -1,6 +1,6 @@
 import type { Job, JobSource } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, strings, plain, iso } from "../utils/http.ts";
-import { isCanadian, isMechanicalCandidate, hasMechanicalEarlyTitle } from "../services/classifier.ts";
+import { isCanadian, isMechanicalCandidate, hasMechanicalEarlyTitle, isSweCandidateTitle } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 import { fetchSmartRecruiters } from "./smartrecruiters.ts";
 
@@ -93,7 +93,7 @@ export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpCli
       if (page === maxPages - 1) log("warn", "career_search_capped", { source: board.tenant, keyword, total, scanned: offset });
     }
   }
-  const candidates = [...seen.values()].filter(job => (technical.test(job.title) || (mechanicalEnabled && isMechanicalCandidate(job.title))) && !excluded.test(job.title) &&
+  const candidates = [...seen.values()].filter(job => (technical.test(job.title) || isSweCandidateTitle(job.title) || (mechanicalEnabled && isMechanicalCandidate(job.title))) && !excluded.test(job.title) &&
     (job.locations.some(isCanadian) || job.locations.some(value => multiLocation.test(value)) || !job.locations.length));
   // Prefer explicit early-career roles when the per-source detail budget is reached.
   const priority = (job: Job) => /\b(new[- ]grad|junior|early[- ]career|entry[- ]level|associate|engineer i|developer i)\b/i.test(job.title) ||

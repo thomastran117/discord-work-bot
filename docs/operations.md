@@ -29,7 +29,7 @@ The container's ordinary Docker default is still the local long-running schedule
 1. Enable GitHub Actions.
 2. Create or reuse the same Discord webhook at **Edit Channel → Integrations → Webhooks**.
 3. Add `DISCORD_WEBHOOK_URL` in **Settings → Secrets and variables → Actions → New repository secret**.
-4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch and select poll or backfill (1–30 days, default 7).
+4. Open **Actions → Canadian new-grad job bot → Run workflow** on the default branch and select poll or backfill (1–60 days, default 7).
 
 The workflow has no cron trigger. It uses its built-in repository token and the same shared entrypoint, snapshot and lock as Railway; a simultaneous run fails before polling rather than competing for delivery. Use matching first-run and notification-cap settings on both hosts. The independent CI workflow still runs tests.
 
@@ -42,7 +42,7 @@ For a forum or media channel, append `?thread_id=<thread snowflake>` to the webh
 | `poll` (default) | Normal incremental poll, also used by Railway's schedule. The first successful poll seeds existing matches per source by default. |
 | `backfill` | Fetch current matches and queue unsent postings dated within the requested lookback. |
 
-Both manual modes run on the default branch and restore/save SQLite. Manual backfill accepts a whole number of days from 1 to 30 (default 7); Railway and manual poll ignore this input. Both GitHub Actions and the CLI validate the bound. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs.
+Both manual modes run on the default branch and restore/save SQLite. Manual backfill accepts a whole number of days from 1 to 60 (default 7); Railway and manual poll ignore this input. Both GitHub Actions and the CLI validate the bound. Changing `FIRST_RUN_MODE` later does not replay previously seeded jobs.
 
 ### Backfill rules
 
@@ -73,7 +73,7 @@ Use Node.js 24.x. Copy [`.env.example`](../.env.example) to `.env` and set the w
 | `npm run preview` | Live source preview; reads saved cooldowns if available, no state writes or webhook |
 | `npm run test:webhook` | Send a fictional card; no scraping or state changes |
 | `npm run once` | One standard poll |
-| `npm run backfill -- 14` | One bounded backfill (1–30 days; omit argument for 7) |
+| `npm run backfill -- 14` | One bounded backfill (1–60 days; omit argument for 7) |
 | `npm start` | Poll immediately and every 120 minutes by default |
 
 The long-running process skips overlapping polls. Use only one deployment per state database and Discord destination to avoid competing notification queues.
@@ -137,6 +137,10 @@ Normalized posting fields are bounded before persistence. Discord payloads show 
 
 A successful empty poll emits a warning (including a GitHub Actions warning annotation) and exits with code 0. Partial source outages also warn and exit with code 0 if delivery succeeds; this does not imply complete coverage. If all sources fail, or a Discord delivery, configuration or database operation fails, one-shot execution exits nonzero. Existing pending notifications can still be processed when sources fail. Invalid notification payloads are quarantined and warned about, rather than blocking the rest of the queue. Local preview uses the same partial-source policy but does not issue an empty-notification warning. State restore and save failures remain fatal.
 
+### Diagnosing low backfill counts
+
+Check `swe_classification` for per-source rejection counts (location, role, seniority/employment, discipline evidence, experience, early-career evidence, invalid rows). For backfill, `backfill_date_breakdown` separates in-window, too-old, missing, malformed and future posting dates per source/category before deduplication. Compare these with `source_complete` for duplicate/seed/requeue counts and `category_delivery_queue` / `poll_complete` for selected and remaining pending jobs. A run that delivers the configured cap but leaves zero pending is not necessarily cap-limited. Provider outages and unavailable posting dates still limit historical coverage.
+
 ## Troubleshooting
 
 | Symptom | What to check |
@@ -169,4 +173,4 @@ Create a second channel webhook and set `DISCORD_MECHANICAL_WEBHOOK_URL` on the 
 
 The Nov 17, 2026 backfills [44225997638](https://github.com/thomastran117x/discord-work-bot/actions/runs/44225997638) and [44226600715](https://github.com/thomastran117x/discord-work-bot/actions/runs/44226600715) each matched 71 SWE and zero mechanical jobs; three Workday sources were rate-limited. This was a discovery issue, not an observed Discord delivery error. Inspect `career_search_complete` for scanned/query candidates, `mechanical_classification` for rejection counts and `category_delivery_queue` for pending selections. `notification_sent` includes the category. Test webhook independently with `npm run test:webhook -- --mechanical`.
 
-Optional `MECHANICAL_FIRST_RUN_MODE=publish` (Railway variable or GitHub Actions repository variable) overrides seeding for newly initialized mechanical sources on a normal poll, leaving SWE seeding unchanged. Set it before the first normal poll of new sources if you want to post currently listed jobs, including undated ones. It does not replay previously seeded jobs or override backfill's 1–30 day reliable publication-date rule. Set it back to `seed` after the initial poll if desired. Already sent jobs remain deduplicated; the per-category delivery cap still applies. Greenhouse does not provide reliable original publication dates, so use normal polling for such listings rather than fabricating dates or deleting state.
+Optional `MECHANICAL_FIRST_RUN_MODE=publish` (Railway variable or GitHub Actions repository variable) overrides seeding for newly initialized mechanical sources on a normal poll, leaving SWE seeding unchanged. Set it before the first normal poll of new sources if you want to post currently listed jobs, including undated ones. It does not replay previously seeded jobs or override backfill's 1–60 day reliable publication-date rule. Set it back to `seed` after the initial poll if desired. Already sent jobs remain deduplicated; the per-category delivery cap still applies. Greenhouse does not provide reliable original publication dates, so use normal polling for such listings rather than fabricating dates or deleting state.

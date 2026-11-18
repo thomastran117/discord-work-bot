@@ -1,5 +1,5 @@
 export const MIN_BACKFILL_DAYS = 1;
-export const MAX_BACKFILL_DAYS = 30;
+export const MAX_BACKFILL_DAYS = 60;
 export const DEFAULT_BACKFILL_DAYS = 7;
 const DAY_MS = 86_400_000;
 
@@ -10,14 +10,14 @@ export interface BackfillWindow {
 }
 
 export function parseBackfillDays(value: string): number {
-  if (!/^(?:[1-9]|[12][0-9]|30)$/.test(value))
-    throw new Error("Backfill days must be a whole number from 1 to 30");
+  if (!/^[1-9]\d*$/.test(value) || Number(value) > MAX_BACKFILL_DAYS)
+    throw new Error("Backfill days must be a whole number from 1 to 60");
   return Number(value);
 }
 
 export function backfillWindow(days: number, now = Date.now()): BackfillWindow {
   if (!Number.isInteger(days) || days < MIN_BACKFILL_DAYS || days > MAX_BACKFILL_DAYS)
-    throw new Error("Backfill days must be a whole number from 1 to 30");
+    throw new Error("Backfill days must be a whole number from 1 to 60");
   return { days, from: now - days * DAY_MS, through: now };
 }
 

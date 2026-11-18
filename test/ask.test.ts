@@ -9,7 +9,9 @@ test("structured command defaults and validation",()=>{
   assert.deepEqual(askCommand.options.map(x=>x.name),["company","location","days","page","category"]);
   assert.deepEqual(parseAsk({}),{company:undefined,location:undefined,days:30,page:1});
   assert.deepEqual(parseAsk({company:" RBC ",location:" Ottawa ",days:3,page:2}),{company:"RBC",location:"Ottawa",days:3,page:2});
-  for(const days of [0,31,1.5,NaN]) assert.throws(()=>parseAsk({days}));
+  assert.equal(parseAsk({days:60}).days,60);
+  assert.equal(askCommand.options.find(x=>x.name==="days")?.max_value,60);
+  for(const days of [0,61,1.5,NaN]) assert.throws(()=>parseAsk({days}));
   for(const page of [0,1.5,100001]) assert.throws(()=>parseAsk({page}));
   assert.throws(()=>parseAsk({company:"!!"})); assert.throws(()=>parseAsk({location:"a".repeat(101)}));
   assert.throws(()=>parseAsk({question:"find jobs"} as any));
@@ -60,4 +62,10 @@ test("Discord signatures and timestamp",async()=>{
   assert.equal(await verifyRequest(pub,sig,stamp,body,now),true);
   assert.equal(await verifyRequest(pub,sig,stamp,body+" ",now),false);
   assert.equal(await verifyRequest(pub,sig,stamp,body,now+301000),false);
+});
+
+test("ask can search 60 days without changing its default",()=>{
+  const older=job("Example",["Ottawa"],"2026-10-03T12:00:00.000Z");
+  assert.equal(searchJobs([older],parseAsk({}),now).total,0);
+  assert.equal(searchJobs([older],parseAsk({days:60}),now).total,1);
 });

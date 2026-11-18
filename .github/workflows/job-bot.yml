@@ -11,7 +11,7 @@ on:
           - poll
           - backfill
       backfill_days:
-        description: Days to look back (1–30; ignored for poll)
+        description: Days to look back (1–60; ignored for poll)
         type: number
         required: false
         default: 7

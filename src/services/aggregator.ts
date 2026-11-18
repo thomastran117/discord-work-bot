@@ -1,11 +1,12 @@
 import type { Job, JobSource, JobCategory } from "../models/job.ts";
 import type { JobsRepository } from "../repositories/jobs.ts";
-import { classifyJob, assessMechanical } from "./classifier.ts";
+import { classifyJob, assessMechanical, assessSwe } from "./classifier.ts";
 import { extractStartDate } from "./enrichment.ts";
 import { normalizeJob, urlIdentity } from "./identity.ts";
 import { SOURCE_DATA_LIMITS } from "../utils/http.ts";
 import { log } from "../utils/logger.ts";
 import { PermanentDeliveryError } from "./delivery.ts";
+import { postedTime } from "./backfill.ts";
 import type { BackfillWindow } from "./backfill.ts";
 
 interface Options {
@@ -43,6 +44,7 @@ export async function runAggregation(sources: JobSource[], options: Options) {
     const jobs: Job[] = [];
     let invalid = 0;
     const mechanicalReasons: Record<string, number> = {};
+    const sweReasons: Record<string, number> = {};
     for (const job of raw) {
       try {
         const candidate = normalizeJob(job);
@@ -51,6 +53,8 @@ export async function runAggregation(sources: JobSource[], options: Options) {
           if (assessment !== "not_candidate") mechanicalReasons[assessment] = (mechanicalReasons[assessment] ?? 0) + 1;
         }
         const category = classifyJob(candidate);
+        const sweReason = category === "mechanical" ? "mechanical" : assessSwe(candidate);
+        sweReasons[sweReason] = (sweReasons[sweReason] ?? 0) + 1;
         if (!category || !categories.includes(category)) continue;
         // Extract the term before dropping description text. Only notification metadata
         // is persisted, including in the public bot-state branch on GitHub Actions.
@@ -60,6 +64,24 @@ export async function runAggregation(sources: JobSource[], options: Options) {
       } catch { invalid++; }
     }
     if (categories.includes("mechanical")) log("info", "mechanical_classification", { source: source.name, ...mechanicalReasons, candidates: Object.values(mechanicalReasons).reduce((sum, count) => sum + count, 0) });
+    log("info", "swe_classification", { source: source.name, ...sweReasons, invalid });
+    if (options.backfill) {
+      const window = options.backfill;
+      for (const category of categories) {
+        const dates = { inWindow: 0, tooOld: 0, missingDate: 0, invalidDate: 0, futureDate: 0 };
+        for (const job of jobs.filter(item => item.category === category)) {
+          const at = postedTime(job.postedAt);
+          if (!job.postedAt) dates.missingDate++;
+          else if (at === undefined) dates.invalidDate++;
+          else if (at < window.from) dates.tooOld++;
+          else if (at > window.through) dates.futureDate++;
+          else dates.inWindow++;
+        }
+        // These are source-row counts before identity reconciliation; the
+        // repository still applies earliest-known dates and deduplication.
+        log("info", "backfill_date_breakdown", { source: source.name, category, days: window.days, ...dates });
+      }
+    }
     matched += jobs.length;
     if (options.dryRun) {
       for (const job of jobs) previews.set(urlIdentity(job.url), job);

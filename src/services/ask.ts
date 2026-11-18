@@ -10,7 +10,8 @@ export interface SearchOptions {
 }
 export interface SearchQuery { company?: string; location?: string; days: number; page: number; category?: JobCategory }
 export const PAGE_SIZE = 5;
-export const ASK_HELP = "Use /ask with optional company, location, days (1–30), page and category (swe or mechanical). Example: /ask company:Nokia location:Ottawa days:7.";
+export const DEFAULT_ASK_DAYS = 30;
+export const ASK_HELP = "Use /ask with optional company, location, days (1–60), page and category (swe or mechanical). Example: /ask company:Nokia location:Ottawa days:7.";
 const FILTER_MAX = 100;
 
 function clean(value: string | undefined): string | undefined {
@@ -23,7 +24,7 @@ export function parseAsk(options: SearchOptions): SearchQuery {
     throw new Error(ASK_HELP);
   const company = clean(options.company), location = clean(options.location);
   let days = options.days;
-  days ??= MAX_BACKFILL_DAYS;
+  days ??= DEFAULT_ASK_DAYS;
   backfillWindow(days);
   const page = options.page ?? 1;
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw new Error("Page must be a positive whole number (max 100000).");
@@ -161,11 +162,11 @@ export function formatSearch(jobs: SearchJob[], query: SearchQuery, now = Date.n
   })) };
 }
 export const askCommand = {
-  name: "ask", description: "Search collected job postings from the last 30 days", type: 1,
+  name: "ask", description: "Search collected job postings from the last 60 days", type: 1,
   options: [
     {type:3,name:"company",description:"Company name (typos tolerated)",max_length:FILTER_MAX},
     {type:3,name:"location",description:"City, province or location (typos tolerated)",max_length:FILTER_MAX},
-    {type:4,name:"days",description:"Lookback days (default 30)",min_value:1,max_value:30},
+    {type:4,name:"days",description:"Lookback days (default 30)",min_value:1,max_value:MAX_BACKFILL_DAYS},
     {type:4,name:"page",description:"Results page (default 1)",min_value:1,max_value:100000},
     {type:3,name:"category",description:"Engineering discipline (default both)",choices:[{name:"Software engineering",value:"swe"},{name:"Mechanical engineering",value:"mechanical"}]}
   ]
