@@ -1,6 +1,6 @@
 import type { Job, JobSource, JobCategory } from "../models/job.ts";
 import type { JobsRepository } from "../repositories/jobs.ts";
-import { classifyJob } from "./classifier.ts";
+import { classifyJob, assessMechanical } from "./classifier.ts";
 import { extractStartDate } from "./enrichment.ts";
 import { normalizeJob, urlIdentity } from "./identity.ts";
 import { SOURCE_DATA_LIMITS } from "../utils/http.ts";
@@ -41,9 +41,14 @@ export async function runAggregation(sources: JobSource[], options: Options) {
 
     const jobs: Job[] = [];
     let invalid = 0;
+    const mechanicalReasons: Record<string, number> = {};
     for (const job of raw) {
       try {
         const candidate = normalizeJob(job);
+        if (categories.includes("mechanical")) {
+          const assessment = assessMechanical(candidate);
+          if (assessment !== "not_candidate") mechanicalReasons[assessment] = (mechanicalReasons[assessment] ?? 0) + 1;
+        }
         const category = classifyJob(candidate);
         if (!category || !categories.includes(category)) continue;
         // Extract the term before dropping description text. Only notification metadata
@@ -53,6 +58,7 @@ export async function runAggregation(sources: JobSource[], options: Options) {
         jobs.push(normalized);
       } catch { invalid++; }
     }
+    if (categories.includes("mechanical")) log("info", "mechanical_classification", { source: source.name, ...mechanicalReasons, candidates: Object.values(mechanicalReasons).reduce((sum, count) => sum + count, 0) });
     matched += jobs.length;
     if (options.dryRun) {
       for (const job of jobs) previews.set(urlIdentity(job.url), job);
@@ -70,7 +76,11 @@ export async function runAggregation(sources: JobSource[], options: Options) {
   if (options.dryRun) {
     for (const job of previews.values()) log("info", "preview_job", { category: job.category, title: job.title, company: job.company, locations: job.locations, startDate: job.startDate ?? "Not specified", url: job.url });
   } else {
-    const queue = categories.flatMap(category => options.repository!.pending(options.maxNotifications, options.backfill, category));
+    const queue = categories.flatMap(category => {
+      const pending = options.repository!.pending(options.maxNotifications, options.backfill, category);
+      log("info", "category_delivery_queue", { category, selected: pending.length, backfill: Boolean(options.backfill) });
+      return pending;
+    });
     const failedCategories = new Set<JobCategory>();
     selected = queue.length;
     log("info", "delivery_queue", { ...options.repository!.counts(), selected: queue.length, limit: options.maxNotifications, backfill: Boolean(options.backfill), backfillDays: options.backfill?.days });
@@ -95,7 +105,7 @@ export async function runAggregation(sources: JobSource[], options: Options) {
       // Persistence failures must remain fatal even if Discord accepted the card.
       options.repository!.markSent(item.id, id);
       delivered++;
-      log("info", "notification_sent", { jobId: item.id, messageId: id });
+      log("info", "notification_sent", { category, jobId: item.id, messageId: id });
     }
     if (failedCategories.size) return { failed, delivered, rejected, matched, selected, deliveryFailed: true };
   }
