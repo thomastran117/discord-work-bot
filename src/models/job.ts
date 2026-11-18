@@ -1,4 +1,7 @@
+export type JobCategory = "swe" | "mechanical";
+
 export interface Job {
+  category?: JobCategory;
   source: string;
   externalId: string;
   title: string;
