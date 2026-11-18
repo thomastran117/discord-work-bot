@@ -89,7 +89,7 @@ return async function handle(body: Uint8Array, sig: string, stamp: string, defer
         if (option.name === "days" || option.name === "page") {
           if (typeof option.value !== "number") throw new Error("Invalid numeric option.");
           options[option.name] = option.value;
-        } else if (option.name === "company" || option.name === "location") {
+        } else if (option.name === "company" || option.name === "location" || option.name === "category") {
           if (typeof option.value !== "string") throw new Error("Invalid text option.");
           options[option.name] = option.value;
         } else throw new Error(ASK_HELP);
