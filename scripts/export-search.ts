@@ -16,7 +16,7 @@ try {
     const postedAt = posted === undefined ? undefined : new Date(posted).toISOString();
     const at = posted ?? Date.parse(firstSeenAt);
     if (at < window.from || at > window.through) continue;
-    jobs.push({company:job.company,title:job.title,locations:job.locations,url:job.url,postedAt,firstSeenAt});
+    jobs.push({company:job.company,title:job.title,locations:job.locations,url:job.url,postedAt,firstSeenAt,category:job.category ?? "swe"});
   }
   writeFileSync(output, JSON.stringify({version:1,jobs})+"\n");
 } finally { db.close(); }

@@ -18,5 +18,13 @@
   {
     "id": "autodesk",
     "enabled": true
+  },
+  {
+    "id": "aecom",
+    "enabled": true
+  },
+  {
+    "id": "cima",
+    "enabled": true
   }
 ]

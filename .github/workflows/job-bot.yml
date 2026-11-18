@@ -45,6 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_MECHANICAL_WEBHOOK_URL: ${{ secrets.DISCORD_MECHANICAL_WEBHOOK_URL }}
           RUN_MODE: ${{ inputs.mode }}
           BACKFILL_DAYS: ${{ inputs.backfill_days }}
         run: bash scripts/run-job.sh "$RUN_MODE" "${BACKFILL_DAYS:-7}"

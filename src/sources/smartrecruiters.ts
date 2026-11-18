@@ -1,10 +1,12 @@
 import type { Job } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, plain, iso } from "../utils/http.ts";
+import { isMechanicalCandidate } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 
 interface SmartRecruitersBoard {
   company: string;
   tenant: string;
+  id: string;
 }
 const API = "https://api.smartrecruiters.com/v1/companies/";
 const JOBS = "https://jobs.smartrecruiters.com/";
@@ -44,7 +46,7 @@ function isExcluded(row: Record<string, unknown>): boolean {
     excluded.test(str(row.name));
 }
 
-export function parseSmartRecruitersPage(board: SmartRecruitersBoard, payload: unknown): { total: number; scanned: number; jobs: Job[] } {
+export function parseSmartRecruitersPage(board: SmartRecruitersBoard, payload: unknown, mechanicalEnabled = false): { total: number; scanned: number; jobs: Job[] } {
   const root = record(payload);
   if (typeof root.totalFound !== "number" || !Number.isSafeInteger(root.totalFound) || root.totalFound < 0)
     throw new Error("Unexpected SmartRecruiters total");
@@ -54,10 +56,10 @@ export function parseSmartRecruitersPage(board: SmartRecruitersBoard, payload: u
     const id = identifier(row.id), title = str(row.name);
     if (!id || !title) throw new Error("Unexpected SmartRecruiters posting shape");
     const location = countryLocation(row.location);
-    if (!location || row.active === false || isExcluded(row) || !technical.test(title)) continue;
+    if (!location || row.active === false || isExcluded(row) || !(technical.test(title) || (mechanicalEnabled && isMechanicalCandidate(title)))) continue;
     const level = record(row.experienceLevel);
     jobs.push({
-      source: "smartrecruiters:sap", externalId: id, company: board.company, title,
+      source: "smartrecruiters:" + board.id, externalId: id, company: board.company, title,
       locations: [location], url: jobUrl(board, id, title),
       postedAt: iso(row.releasedDate),
       employmentType: str(record(row.typeOfEmployment).label),
@@ -87,7 +89,7 @@ export function enrichSmartRecruiters(board: SmartRecruitersBoard, job: Job, pay
     postedAt: iso(row.releasedDate) || job.postedAt};
 }
 
-export async function fetchSmartRecruiters(board: SmartRecruitersBoard, http = new SourceHttpClient(), signal?: AbortSignal): Promise<Job[]> {
+export async function fetchSmartRecruiters(board: SmartRecruitersBoard, http = new SourceHttpClient(), signal?: AbortSignal, mechanicalEnabled = false): Promise<Job[]> {
   const endpoint = API + encodeURIComponent(board.tenant) + "/postings";
   const seen = new Map<string, Job>();
   let offset = 0;
@@ -96,18 +98,18 @@ export async function fetchSmartRecruiters(board: SmartRecruitersBoard, http = n
     url.searchParams.set("country", "ca");
     url.searchParams.set("limit", String(pageSize));
     url.searchParams.set("offset", String(offset));
-    const { total, scanned, jobs } = parseSmartRecruitersPage(board, await http.getJson(url.toString(), signal));
+    const { total, scanned, jobs } = parseSmartRecruitersPage(board, await http.getJson(url.toString(), signal), mechanicalEnabled);
     for (const job of jobs) seen.set(job.externalId, job);
     // Pagination follows all returned rows, not just eligible candidates.
     offset += scanned;
     if (offset >= total) break;
     if (!scanned) throw new Error("SmartRecruiters pagination ended before total");
-    if (page === maxPages - 1) log("warn", "career_search_capped", { source: "sap", total, scanned: offset });
+    if (page === maxPages - 1) log("warn", "career_search_capped", { source: board.id, total, scanned: offset });
   }
   const candidates = [...seen.values()];
   candidates.sort((a, b) => Number(!(a.isNewGrad || early.test(a.title))) - Number(!(b.isNewGrad || early.test(b.title))));
   if (candidates.length > maxDetails)
-    log("warn", "career_detail_capped", {source: "sap", candidates: candidates.length, limit: maxDetails});
+    log("warn", "career_detail_capped", {source: board.id, candidates: candidates.length, limit: maxDetails});
   const jobs: Job[] = [];
   for (const job of candidates.slice(0, maxDetails)) {
     try {

@@ -16,7 +16,7 @@ const detail = { jobPostingInfo: { title: listRow.title, location: "Ottawa", job
 const oracleRow = { Id: "30015", Title: "Firmware Engineer - New Grad", PrimaryLocation: "Ottawa", PrimaryLocationCountry: "CA", ShortDescriptionStr: "<p>Early career</p>", PostedDate: "2026-11-15", secondaryLocations: [{ Name: "Toronto", Country: "CA" }] };
 
 test("direct career sources are enabled in default configuration", () => {
-  assert.deepEqual(loadConfig({}).careers, ["ciena","rbc","nokia","sap","autodesk"]);
+  assert.deepEqual(loadConfig({}).careers, ["ciena","rbc","nokia","sap","autodesk","aecom","cima"]);
 });
 test("Workday list and detail normalize without inventing employment start date", () => {
   const page = parseWorkdayList(CAREERS.ciena, {total: 1, jobPostings: [listRow]});

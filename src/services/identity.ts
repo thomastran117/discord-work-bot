@@ -87,7 +87,7 @@ export function normalizeJob(job: Job): Job {
     throw new Error("Invalid job field: locations");
   const locations = [...new Set(job.locations.map(value => bounded(value, "location", JOB_LIMITS.location)).filter(Boolean) as string[])];
   return {
-    source, externalId, title, company, locations: locations.filter(isCanadian), url: normalizeUrl(job.url),
+    source, externalId, title, company, ...(job.category === "mechanical" || job.category === "swe" ? { category: job.category } : {}), locations: locations.filter(isCanadian), url: normalizeUrl(job.url),
     description: bounded(job.description, "description", JOB_LIMITS.description),
     employmentType: bounded(job.employmentType, "employmentType", JOB_LIMITS.employmentType),
     isNewGrad: job.isNewGrad === true ? true : undefined,

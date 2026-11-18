@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Job } from "../models/job.ts";
+import type { Job, JobCategory } from "../models/job.ts";
 import { urlIdentity } from "../services/identity.ts";
 import { knownPostedAt, withinBackfill } from "../services/backfill.ts";
 import type { BackfillWindow } from "../services/backfill.ts";
@@ -56,6 +56,7 @@ export class JobsRepository {
           result.duplicates++;
           const row = this.db.prepare("SELECT payload,state FROM jobs WHERE id=?").get(id)!;
           const original = JSON.parse(String(row.payload)) as Job;
+          if ((job.category ?? "swe") !== (original.category ?? "swe")) continue;
           const postedAt = knownPostedAt(job.postedAt, original.postedAt);
           const startDate = original.startDate ?? job.startDate;
           const next = { ...original, postedAt, startDate };
@@ -119,7 +120,7 @@ export class JobsRepository {
     return counts;
   }
 
-  pending(limit: number, backfill?: BackfillWindow): PendingJob[] {
+  pending(limit: number, backfill?: BackfillWindow, category?: JobCategory): PendingJob[] {
     // Existing pending jobs outside a backfill window remain queued for
     // normal polling. SQL narrows the queue before applying the delivery cap.
     const dateFilter = backfill ? `AND julianday(json_extract(payload,'$.postedAt'))
@@ -127,12 +128,14 @@ export class JobsRepository {
     const statement = this.db.prepare(`
       SELECT id,payload FROM jobs WHERE state='pending'
       AND NOT EXISTS (SELECT 1 FROM delivery_rejections WHERE job_id=jobs.id)
+      ${category ? "AND COALESCE(json_extract(payload,'$.category'),'swe') = ?" : ""}
       ${dateFilter}
       ORDER BY first_seen_at,id
     ` + (backfill ? "" : " LIMIT ?"));
     const map = (row: Record<string, unknown>) => ({ id: String(row.id), job: JSON.parse(String(row.payload)) as Job });
-    if (!backfill) return statement.all(limit).map(map);
-    const args = [new Date(backfill.from).toISOString(), new Date(backfill.through).toISOString()];
+    const categoryArgs = category ? [category] : [];
+    if (!backfill) return statement.all(...categoryArgs, limit).map(map);
+    const args = [...categoryArgs, new Date(backfill.from).toISOString(), new Date(backfill.through).toISOString()];
     const selected: PendingJob[] = [];
     for (const row of statement.iterate(...args)) {
       const item = map(row);
