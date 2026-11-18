@@ -53,5 +53,35 @@
     "provider": "lever",
     "company": "Waabi",
     "board": "waabi"
+  },
+  {
+    "provider": "greenhouse",
+    "company": "LAPORTE",
+    "board": "englishcanada",
+    "mechanicalFocus": true
+  },
+  {
+    "provider": "lever",
+    "company": "Promise Robotics",
+    "board": "promiserobotics",
+    "mechanicalFocus": true
+  },
+  {
+    "provider": "lever",
+    "company": "Elk Valley Resources",
+    "board": "evr",
+    "mechanicalFocus": true
+  },
+  {
+    "provider": "lever",
+    "company": "DIALOG",
+    "board": "dialogdesign",
+    "mechanicalFocus": true
+  },
+  {
+    "provider": "lever",
+    "company": "Systemex",
+    "board": "systemex",
+    "mechanicalFocus": true
   }
 ]

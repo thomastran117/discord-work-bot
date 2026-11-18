@@ -2,16 +2,16 @@
 
 [Back to README](../README.md)
 
-The default configuration contains 17 sources: SimplifyJobs, 11 public ATS employer boards and five direct employer career sites. With the mechanical webhook enabled, AECOM and CIMA+ are also polled (19 default sources). There are three optional curated adapters (22 supported in total). These are configuration counts, not a guarantee that every integration is reachable or has current vacancies.
+The default configuration contains 17 sources: SimplifyJobs, 11 public ATS employer boards and five direct employer career sites. With the mechanical webhook enabled, AECOM, CIMA+, LAPORTE, Promise Robotics, Elk Valley Resources, DIALOG and Systemex are also polled (24 default sources). There are three optional curated adapters (27 supported in total). These are configuration counts, not a guarantee that every integration is reachable or has current vacancies.
 
 ## Default sources
 
 | Provider | Employers / feed |
 | --- | --- |
 | SimplifyJobs | [New-Grad Positions / Coder Quad](https://github.com/SimplifyJobs/New-Grad-Positions) |
-| [Greenhouse](https://developers.greenhouse.io/job-board.html) | Affirm, DoorDash Canada board, Faire, Robinhood |
+| [Greenhouse](https://developers.greenhouse.io/job-board.html) | Affirm, DoorDash Canada board, Faire, Robinhood; [LAPORTE](https://job-boards.greenhouse.io/englishcanada) (mechanical opt-in) |
 | [Ashby](https://developers.ashbyhq.com/docs/public-job-posting-api) | Cerebras, Cohere, Wealthsimple, Zip |
-| [Lever](https://github.com/lever/postings-api) | Achievers, Apply Digital, Waabi |
+| [Lever](https://github.com/lever/postings-api) | Achievers, Apply Digital, Waabi; [Promise Robotics](https://jobs.lever.co/promiserobotics), [Elk Valley Resources](https://jobs.lever.co/evr), [DIALOG](https://jobs.lever.co/dialogdesign), [Systemex](https://jobs.lever.co/systemex) (mechanical opt-in) |
 | Workday | [Ciena](https://ciena.wd5.myworkdayjobs.com/Careers), [RBC](https://rbc.wd3.myworkdayjobs.com/RBCGLOBAL1), [Autodesk](https://autodesk.wd1.myworkdayjobs.com/Ext) |
 | Oracle Recruiting Cloud | [Nokia](https://jobs.nokia.com/en/sites/CX_1/jobs) |
 | [SmartRecruiters](https://developers.smartrecruiters.com/docs/endpoints) | [SAP](https://jobs.sap.com/en/jobs/) |
@@ -51,7 +51,7 @@ Edit [`config/careers.json`](../config/careers.json).
 - Workday uses a read-only search POST (never an application submission) and GET detail requests. The search is limited to six keywords (ten when mechanical is enabled), ten pages of up to 20 results per keyword, and 36 detail requests per employer. Results may be incomplete; RBC targets the main external board, not a separate early-talent board. Autodesk uses the external Workday `Ext` site; its explicit `CAN` location markers are normalized before classification.
 - Nokia uses the Oracle Candidate Experience Canada location filter and paginated requisition summaries (up to 12 search pages). Missing location or experience evidence can exclude relevant roles.
 - SAP uses the documented SmartRecruiters public Posting API for the `SAPITBusinessSysteme` tenant, identified from SAP's current careers application links. It requests Canadian postings (up to six pages of 50), retrieves details for up to 25 technical candidates, and uses structured country, employment and experience metadata. SAP is migrating career sites; roles present only on its [legacy site](https://careers.sap.com/go/Canada/8806801/) or other tenants are not covered. The live API request has not been verified end-to-end.
-- AECOM and CIMA+ reuse the bounded SmartRecruiters adapter (configured tenants `AECOM2` and `CIMA2`). Live API responses have not been verified. These boards are skipped when the mechanical webhook is unset (except preview). Disable either in careers.json if incompatible or blocked.
+- AECOM and CIMA+ reuse the bounded SmartRecruiters adapter (configured tenants `AECOM2` and `CIMA2`). Both boards responded in the Nov 17, 2026 backfills, but yielded no eligible mechanical jobs; the CIMA+ general listing reported 559 postings and reached its 300-row cap. When mechanical is enabled, these two boards use six additional documented keyword queries (up to three pages each), deduplicate candidates before detail fetches and reserve detail capacity for both streams. These boards are skipped when the mechanical webhook is unset (except preview). Disable either in careers.json if incompatible or blocked.
 - Workday has a 240-second per-employer deadline; Oracle and SmartRecruiters have 120 seconds. The shared HTTP policy spaces requests and respects throttling across all providers. These browser-facing services are not stable, supported third-party API contracts. Ciena and RBC have returned HTTP 429 in GitHub Actions; Nokia's search has returned results, though no roles matched in that run. See [operations](operations.md#observed-deployment-issue).
 
 Do not bypass access restrictions. Set `enabled: false` on a career source if it is blocked, not permitted or needs investigation.
@@ -78,7 +78,7 @@ The parser reads raw Markdown tables, recognizes closed listings and handles pro
 
 ## Matching policy
 
-All sources pass a shared Canadian location and software-role classifier. Curated feeds can supply an early-career signal; direct employers also use titles and description evidence. Internships, co-ops, explicitly senior and other excluded roles are rejected. Ambiguous locations and generic remote roles are conservatively filtered. This is heuristic: some suitable positions will be missed, and some non-target positions may pass. Full-time status is not guaranteed when employment type is absent.
+All sources pass a shared Canadian location and discipline classifier. Mechanical assessment recognizes EIT, graduate, trainee, French/abbreviated titles and experience ranges; ambiguous engineering roles still require mechanical degree evidence. Mechanical-focused public ATS boards use `mechanicalFocus: true` to activate only when the mechanical feed is enabled (or in preview). Their live API availability has not been verified, even where public career pages are visible. Curated feeds can supply an early-career signal; direct employers also use titles and description evidence. Internships, co-ops, explicitly senior and other excluded roles are rejected. Ambiguous locations and generic remote roles are conservatively filtered. This is heuristic: some suitable positions will be missed, and some non-target positions may pass. Full-time status is not guaranteed when employment type is absent.
 
 Adding a source initializes its own seed history. Preview locally first, then use poll or explicit bounded backfill (1–30 days). Sources without reliable posting dates are excluded from backfill, not ordinary incremental discovery. Existing deduplication history is preserved. The bot does not verify closures for queued jobs, contact application forms or submit applications.
 

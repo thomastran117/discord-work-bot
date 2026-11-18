@@ -21,7 +21,9 @@ export function parseBoard(config: BoardConfig, payload: unknown): Job[] {
     const categories = record(row.categories);
     const locations = [...strings(categories.allLocations), str(categories.location)].filter(Boolean);
     return { ...base, externalId: str(row.id), title: str(row.text), locations,
-      url: str(row.hostedUrl) || str(row.applyUrl), description: plain(row.descriptionPlain || row.description),
+      url: str(row.hostedUrl) || str(row.applyUrl), description: [plain(row.descriptionPlain || row.description),
+        ...(Array.isArray(row.lists) ? row.lists.slice(0, 50).map(section => plain(record(section).content)) : []),
+        plain(row.additionalPlain || row.additional)].filter(Boolean).join(" "),
       employmentType: str(categories.commitment), postedAt: iso(row.createdAt) };
   });
   const jobs = rows(record(payload).jobs);

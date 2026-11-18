@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Job } from "../src/models/job.ts";
-import { classifyJob } from "../src/services/classifier.ts";
+import { classifyJob, assessMechanical } from "../src/services/classifier.ts";
 import { JobsRepository } from "../src/repositories/jobs.ts";
 import { runAggregation } from "../src/services/aggregator.ts";
 import { buildPayload, testWebhook, webhookUrl } from "../src/services/discord.ts";
@@ -90,4 +90,30 @@ test("ask filters by discipline while accepting legacy records",()=>{
   assert.equal(searchJobs(jobs,parseAsk({category:"mechanical"}),now).items[0].job.title,mech.title);
   assert.equal(searchJobs(jobs,parseAsk({category:"swe"}),now).items[0].job.title,swe.title);
   assert.throws(()=>parseAsk({category:"other"}));
+});
+
+test("real-world mechanical naming and minimum experience ranges",()=>{
+  for(const title of ["Graduate Mechanical Engineer","Mechatronics E.I.T.","Mechanical Buildings Jr Eng. Prof.","Junior Refrigeration Engineer/EIT","Mechanical Engineering Trainee"])
+    assert.equal(classifyJob({...mech,title}),"mechanical",title);
+  assert.equal(classifyJob({...mech,title:"Mechanical Engineer",description:"1–3 years of mechanical design experience"}),"mechanical");
+  assert.equal(assessMechanical({...mech,title:"Mechanical EIT",description:"Minimum 3 years of experience"}),"experience");
+  assert.equal(assessMechanical({...mech,title:"Mechanical Engineer",description:"Degree in mechanical engineering"}),"early_career_evidence");
+  assert.equal(classifyJob({...mech,title:"Intermediate Mechanical Engineer",isNewGrad:true}),undefined);
+  assert.equal(classifyJob({...mech,title:"Mechanical Engineer Talent Pool",isNewGrad:true}),undefined);
+  assert.equal(classifyJob({...mech,title:"Graduate Engineer",description:"Mechanical engineering degree required"}),"mechanical");
+  assert.equal(classifyJob({...mech,title:"Structural EIT",description:"Mechanical engineering systems are nearby"}),undefined);
+  assert.equal(classifyJob({...mech,title:"Junior Backend Engineer",description:"Mechanical engineering experience"}),"swe");
+});
+test("mechanical first-poll publish override does not publish existing SWE or replay mechanics",async()=>{
+  const db=new JobsRepository(":memory:");
+  try{
+    const sources=[{name:"test",async fetchJobs(){return [swe,mech];}}];
+    const got:string[]=[];
+    const opts={repository:db,seedFirst:true,mechanicalSeedFirst:false,mechanicalEnabled:true,maxNotifications:10,publish:async(job:Job)=>{got.push(job.category!);return "id";}};
+    await runAggregation(sources,opts);
+    assert.deepEqual(got,["mechanical"]);
+    assert.equal(db.counts().seeded,1);
+    await runAggregation(sources,opts);
+    assert.deepEqual(got,["mechanical"]);
+  }finally{db.close();}
 });

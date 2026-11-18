@@ -60,7 +60,7 @@ async function main() {
     initialCooldowns: dryRun ? readSourceCooldowns(config.databasePath) : undefined
   });
   const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl, http)] : []),
-    ...config.boards.map(board => atsSource(board, http)),
+    ...config.boards.filter(board => mechanicalEnabled || !board.mechanicalFocus).map(board => atsSource(board, http)),
     ...config.feeds.map(id => curatedSource(id, http)),
     ...config.careers.filter(id => mechanicalEnabled || (id !== "aecom" && id !== "cima")).map(id => careerSource(id, http, mechanicalEnabled))];
   if (!sources.length || new Set(sources.map(source => source.name)).size !== sources.length) {
@@ -72,7 +72,7 @@ async function main() {
       if (!destination) throw new Error("Mechanical webhook is not configured");
       return publishJob(destination, job);
     } : undefined,
-    dryRun, backfill, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst };
+    dryRun, backfill, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst, mechanicalSeedFirst: config.mechanicalSeedFirst };
   if (once) {
     try {
       const result = await runAggregation(sources, options);

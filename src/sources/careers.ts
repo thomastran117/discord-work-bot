@@ -1,6 +1,6 @@
 import type { Job, JobSource } from "../models/job.ts";
 import { SourceHttpClient, SourceHttpError, record, rows, str, strings, plain, iso } from "../utils/http.ts";
-import { isCanadian, isMechanicalCandidate } from "../services/classifier.ts";
+import { isCanadian, isMechanicalCandidate, hasMechanicalEarlyTitle } from "../services/classifier.ts";
 import { log } from "../utils/logger.ts";
 import { fetchSmartRecruiters } from "./smartrecruiters.ts";
 
@@ -96,7 +96,8 @@ export async function fetchWorkday(board: WorkdayBoard, http = new SourceHttpCli
   const candidates = [...seen.values()].filter(job => (technical.test(job.title) || (mechanicalEnabled && isMechanicalCandidate(job.title))) && !excluded.test(job.title) &&
     (job.locations.some(isCanadian) || job.locations.some(value => multiLocation.test(value)) || !job.locations.length));
   // Prefer explicit early-career roles when the per-source detail budget is reached.
-  const priority = (job: Job) => /\b(new[- ]grad|junior|early[- ]career|entry[- ]level|associate|engineer i|developer i)\b/i.test(job.title) ? 0 : 1;
+  const priority = (job: Job) => /\b(new[- ]grad|junior|early[- ]career|entry[- ]level|associate|engineer i|developer i)\b/i.test(job.title) ||
+    (mechanicalEnabled && isMechanicalCandidate(job.title) && hasMechanicalEarlyTitle(job.title)) ? 0 : 1;
   candidates.sort((a,b) => priority(a) - priority(b));
   if (candidates.length > maxDetails) log("warn", "career_detail_capped", { source: board.tenant, candidates: candidates.length, limit: maxDetails });
   const result: Job[] = [];

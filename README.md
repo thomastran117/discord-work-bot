@@ -8,7 +8,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 
 ## Features
 
-- 17 existing sources plus two mechanical-focused employer boards, including SimplifyJobs and direct employer career boards.
+- 17 existing sources plus seven mechanical-focused employer boards, including SimplifyJobs and direct employer career boards.
 - Canadian location and early-career discipline filtering (SWE and optional mechanical).
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
@@ -28,7 +28,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 
 Add `DISCORD_WEBHOOK_URL` as a repository Actions secret. To enable the mechanical feed, also set `DISCORD_MECHANICAL_WEBHOOK_URL` in Actions secrets and the Railway poller variables. Under **Actions → Canadian new-grad job bot → Run workflow**, select `poll` or `backfill` (1–30 days, default 7). Both execution hosts share the existing state and an exclusive lock. Do not run legacy workflow revisions that bypass the lock.
 
-First normal polls seed existing listings per source and discipline by default; subsequent polls send new jobs. Backfill queues recent dated postings not previously sent.
+First normal polls seed existing listings per source and discipline by default; subsequent polls send new jobs. Backfill queues recent dated postings not previously sent. To initialize newly enabled mechanical sources without silently seeding current postings, optionally set `MECHANICAL_FIRST_RUN_MODE=publish` before their first normal poll (bounded by the existing notification cap).
 
 > In a public repository, the `bot-state` branch and workflow logs are public. Never commit secrets or delete the state branch.
 

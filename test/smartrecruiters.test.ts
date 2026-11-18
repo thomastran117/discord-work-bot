@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { CAREERS, careerSource } from "../src/sources/careers.ts";
 import { fetchSmartRecruiters, parseSmartRecruitersPage, enrichSmartRecruiters } from "../src/sources/smartrecruiters.ts";
 import { SourceHttpClient, SourceCooldownError } from "../src/utils/http.ts";
-import { eligible } from "../src/services/classifier.ts";
+import { eligible, classifyJob } from "../src/services/classifier.ts";
 import { urlIdentity } from "../src/services/identity.ts";
 
 const board = CAREERS.sap;
@@ -64,4 +64,30 @@ test("SAP source uses shared cooldown and does not retry early or switch hosts",
   await assert.rejects(source.fetchJobs(),SourceCooldownError);
   await assert.rejects(source.fetchJobs(),SourceCooldownError);
   assert.equal(calls,1);
+});
+
+test("targeted query reaches mechanical jobs beyond the capped general listing and enriches once",async()=>{
+  const queries:string[]=[];
+  let detailCalls=0;
+  const mechanical={...row,id:"744000000000009",name:"Mechanical Buildings Jr Eng. Prof.",experienceLevel:{id:"mid_senior_level"},location:{city:"Edmonton",country:"ca"}};
+  const http=mocked(async input=>{
+    const url=new URL(String(input));
+    if(url.pathname.endsWith("/postings")){
+      const q=url.searchParams.get("q") ?? "";
+      queries.push(q);
+      if(!q){
+        const offset=Number(url.searchParams.get("offset"));
+        return Response.json({totalFound:559,content:Array.from({length:50},(_,i)=>({...row,id:String(offset+i+100),name:"Senior Civil Engineer"}))});
+      }
+      return Response.json({totalFound:q==="mechanical"||q==="EIT"?1:0,content:q==="mechanical"||q==="EIT"?[mechanical]:[]});
+    }
+    detailCalls++;
+    return Response.json({...mechanical,jobAd:{sections:{qualifications:{text:"University degree in mechanical engineering. 1–2 years of experience."}}}});
+  });
+  const jobs=await fetchSmartRecruiters(CAREERS.cima,http,undefined,true);
+  assert.equal(queries.filter(x=>!x).length,6);
+  assert.ok(queries.includes("mechanical"));
+  assert.equal(detailCalls,1);
+  assert.equal(jobs.length,1);
+  assert.equal(classifyJob(jobs[0]),"mechanical");
 });
