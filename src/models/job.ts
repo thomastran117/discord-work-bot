@@ -26,4 +26,5 @@ export interface BoardConfig {
   company: string;
   board: string;
   region?: "global" | "eu";
+  mechanicalFocus?: boolean;
 }
