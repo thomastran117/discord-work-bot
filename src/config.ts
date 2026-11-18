@@ -52,7 +52,7 @@ export function loadConfig(env = process.env) {
   const enabled = env.SIMPLIFY_ENABLED ?? "true";
   if (!["true", "false"].includes(enabled)) throw new Error("SIMPLIFY_ENABLED must be true or false");
   return { boards, feeds, careers, simplifyEnabled: enabled === "true", simplifyUrl: env.SIMPLIFY_URL || undefined,
-    databasePath: env.DATABASE_PATH || "./data/jobs.db", webhook: env.DISCORD_WEBHOOK_URL,
+    databasePath: env.DATABASE_PATH || "./data/jobs.db", webhook: env.DISCORD_WEBHOOK_URL, mechanicalWebhook: env.DISCORD_MECHANICAL_WEBHOOK_URL || undefined,
     intervalMs: positiveInt(env.POLL_INTERVAL_MINUTES, 120, 1440) * 60_000,
     maxNotifications: positiveInt(env.MAX_NOTIFICATIONS_PER_RUN, 25, 500), seedFirst: mode === "seed" };
 }
