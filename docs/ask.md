@@ -19,7 +19,7 @@ Railway cron and manual GitHub Actions use the same exclusive writer lock. On sa
 Railway injects PORT; the server binds 0.0.0.0. Set the healthcheck path to /health, generate a public domain in Networking, and deploy. Verify HTTPS GET /health returns an OK response. Do not set GH_TOKEN, DISCORD_WEBHOOK_URL or DISCORD_BOT_TOKEN here. Do not configure a cron schedule on this service.
 
 5. In Discord's application General Information settings, replace the Interactions Endpoint URL with the Railway public HTTPS domain followed by /interactions. Discord sends a signed PING to validate it. If migrating an existing command, test /ask before deleting the old Cloudflare Worker; no re-registration is necessary if the application, guild and command options are unchanged.
-6. For first-time registration only, put DISCORD_APPLICATION_ID, DISCORD_GUILD_ID and DISCORD_BOT_TOKEN in your untracked local .env, then run:
+6. For first-time registration or after changing command options, put DISCORD_APPLICATION_ID, DISCORD_GUILD_ID and DISCORD_BOT_TOKEN in your untracked local .env, then run:
 
 ~~~sh
 npm run register:ask
@@ -32,6 +32,8 @@ For local endpoint development, add DISCORD_PUBLIC_KEY and JOBS_SNAPSHOT_URL to 
 | Command | Result |
 | --- | --- |
 | /ask | All collected matches in 30 days |
+| /ask category:mechanical days:7 | Mechanical roles in 7 days |
+| /ask category:swe | Software roles in 30 days |
 | /ask days:7 | All collected matches in 7 days |
 | /ask company:RBC days:3 | RBC matches in 3 days |
 | /ask company:Nokia | Nokia matches in 30 days |
@@ -39,11 +41,11 @@ For local endpoint development, add DISCORD_PUBLIC_KEY and JOBS_SNAPSHOT_URL to 
 | /ask company:Ciena location:Ottawa days:7 | Combined filters |
 | /ask company:SAP page:2 | Next page of the same search |
 
-All four fields (company, location, days, page) are optional Discord slash-command options. Free-form questions are not accepted. Default is 30 rolling 24-hour days; allowed range 1–30. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the same filters and the next page number.
+All five fields (company, location, days, page, category) are optional Discord slash-command options. Free-form questions are not accepted. Default is 30 rolling 24-hour days; allowed range 1–30. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the same filters and the next page number.
 
 Company and location are limited to 100 characters. Matching ignores case, accents and punctuation; direct partial matches and supported aliases take precedence. If no direct match exists for a field within the selected date range, the closest fuzzy matches are used (one edit for 4–7 characters, up to two for eight or more, including adjacent letter swaps). Short acronyms and province codes are matched directly, not fuzzily. Examples: Nokai → Nokia, Ottwa → Ottawa, Autodsk → Autodesk. Aliases include RBC / Royal Bank of Canada and Canadian province/territory abbreviations. Combined filters must both match; fuzzy matches are labelled in the response. Location matching is textual, not geocoding, and approximations can be ambiguous.
 
-Publication dates are used where available. Undated jobs are included by first discovery time and explicitly labelled first seen; these are not evidence of an employer publishing within the window. Historical collection can be incomplete, jobs can close, and the bot only stores eligible Canadian early-career SWE roles. No result means no recorded match, not proof that a company has not posted. Queries never scrape sources or publish notification cards.
+Publication dates are used where available. Undated jobs are included by first discovery time and explicitly labelled first seen; these are not evidence of an employer publishing within the window. Historical collection can be incomplete, jobs can close, and the bot only stores eligible Canadian early-career SWE and enabled mechanical roles. No result means no recorded match, not proof that a company has not posted. Queries never scrape sources or publish notification cards.
 
 ## Operations and security
 
