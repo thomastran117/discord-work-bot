@@ -1,8 +1,11 @@
 import type { Job, JobCategory } from "../models/job.ts";
 
-const canada = /\b(canada|ontario|qu[eé]bec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|prince edward island|northwest territories|nunavut|yukon)\b/i;
+const canada = /\b(canada|ontario|qu[eé]bec|british columbia|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland(?: and labrador)?|prince edward island|northwest territories|nunavut|yukon)\b/i;
 const cities = /\b(toronto|waterloo|kitchener|ottawa|vancouver|montr[eé]al|calgary|edmonton|burnaby|markham|mississauga|victoria|halifax|winnipeg|saskatoon|regina|kanata|gatineau|qu[eé]bec city|laval|richmond hill|surrey|fredericton|oakville|burlington|kelowna|guelph)\b/i;
-const provinceCodes = /(?:,\s*|\(\s*)(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)(?=$|[\s,)])/i;
+const provinceCodes = /(?:,\s*|\(\s*|\s+[-–—]\s+|\s+)(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)(?=$|[,\)])/;
+const delimitedProvince = /(?:,\s*|\(\s*)(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)(?=$|[\s,)])/i;
+const canadianCountryCode = /(?:^|[,\s(])CAN(?=$|[,\s)])/;
+const foreignSuffix = /(?:\s+[-–—]\s+|\s+)(CA|WA|NY|TX|OR|MI|MA|OH|FL|IL|CO|VA|PA|NJ|MD|WI|MN|IN|NC|SC|GA|AZ|NV|CT|TN|MO|IA|ID|UT|NM|KS|OK|AR|LA|MS|AL|KY|NE|ND|SD|MT|WY|WV|VT|NH|ME|RI|DE|HI|AK)(?=$|[,)])/;
 const foreign = /\b(united states|usa|u\.s\.|california|washington|texas|new york|united kingdom|uk|australia|india)\b|,\s*(CA|WA|NY|TX|OR|MI|MA|OH|FL|IL|CO|VA|PA|NJ|MD|WI|MN|IN|NC|SC|GA|AZ|NV|CT|TN|MO|IA|ID|UT|NM|KS|OK|AR|LA|MS|AL|KY|NE|ND|SD|MT|WY|WV|VT|NH|ME|RI|DE|HI|AK)(?=$|[,\s)])/i;
 const role = /\b(?:software|backend|back[- ]end|frontend|front[- ]end|full[- ]stack|embedded|firmware|devops|sre|site reliability|platform|infrastructure|cloud|machine learning|data|security|distributed systems|systems|application|mobile|android|ios)\b.{0,35}\b(?:engineer(?:ing)?|developer|programmer)\b|\b(?:software developer|software engineer|swe|sde|devops|sre|développeur|développeuse|programmeur|ingénieur logiciel)\b/i;
 // Include closely related technical roles, rather than requiring the exact
@@ -38,8 +41,13 @@ const descriptionEarly = /\b(?:new graduates?|recent graduates?|early[- ]career|
 
 
 export function isCanadian(location: string): boolean {
-  if (canada.test(location) || provinceCodes.test(location)) return true;
-  return !foreign.test(location) && cities.test(location);
+  return location.split(/\s*[;|\n]\s*|\s+\/\s+/).some(part => {
+    const value = part.trim();
+    if (/\bcanada\b/i.test(value) || canadianCountryCode.test(value)) return true;
+    if (foreign.test(value) || foreignSuffix.test(value)) return false;
+    return canada.test(value) || provinceCodes.test(value) || delimitedProvince.test(value) ||
+      /^(?:ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)$/.test(value) || cities.test(value);
+  });
 }
 
 // Parse the entire range so "1–3 years" is not interpreted as a 3-year minimum.

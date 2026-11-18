@@ -8,7 +8,7 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 
 ## Features
 
-- 17 existing sources plus seven mechanical-focused employer boards, including SimplifyJobs and direct employer career boards.
+- 18 existing sources plus seven mechanical-focused employer boards, including SimplifyJobs and direct employer career boards.
 - Canadian location and early-career discipline filtering (SWE and optional mechanical).
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.

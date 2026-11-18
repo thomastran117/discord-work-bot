@@ -31,7 +31,7 @@ export function parseBoard(config: BoardConfig, payload: unknown): Job[] {
     const offices = Array.isArray(row.offices) ? row.offices.map(office => str(record(office).location) || str(record(office).name)) : [];
     return { ...base, externalId: String(row.id ?? ""), title: str(row.title),
       locations: [str(record(row.location).name), ...offices].filter(Boolean),
-      url: str(row.absolute_url), description: plain(row.content),
+      url: str(row.absolute_url), description: plain(row.content), postedAt: iso(row.first_published),
       requisitionKey: str(row.requisition_id) ? config.company.toLowerCase() + ":" + str(row.requisition_id) : undefined };
   });
   return jobs.filter(row => row.isListed !== false).map(row => {

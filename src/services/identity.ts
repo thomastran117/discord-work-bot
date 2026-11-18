@@ -60,6 +60,9 @@ export function urlIdentity(value: string): string {
     const index = parts.indexOf("jobs");
     if (index > 0 && /^\d+$/.test(parts[index + 1] ?? "")) return "greenhouse:" + parts[index - 1].toLowerCase() + ":" + parts[index + 1];
   }
+  if (["stripe.com", "www.stripe.com"].includes(url.hostname) &&
+      parts.length === 4 && parts[0] === "careers" && parts[1] === "listing" && /^\d+$/.test(parts[3]))
+    return "greenhouse:stripe:" + parts[3];
   if (/^jobs(?:\.eu)?\.lever\.co$/i.test(url.hostname) && parts.length >= 2) return "lever:" + url.hostname + ":" + parts[0].toLowerCase() + ":" + parts[1];
   if (url.hostname === "jobs.ashbyhq.com" && parts.length >= 2) return "ashby:" + parts[0].toLowerCase() + ":" + parts[1];
   const workday = url.hostname.match(/^([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com$/i);
