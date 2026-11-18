@@ -12,7 +12,8 @@ Railway runs the existing one-shot poller using the same Git-backed SQLite snaps
 
 | Variable | Value |
 | --- | --- |
-| `DISCORD_WEBHOOK_URL` | Existing Discord channel webhook |
+| `DISCORD_WEBHOOK_URL` | Existing SWE Discord channel webhook |
+| `DISCORD_MECHANICAL_WEBHOOK_URL` | Optional separate mechanical engineering channel webhook |
 | `GH_TOKEN` | Fine-grained GitHub personal access token for this repository only, Contents read/write; observe organization approval and expiry requirements |
 | `STATE_REPOSITORY` | Repository in owner/repo format (e.g. thomastran117x/discord-work-bot) |
 | `FIRST_RUN_MODE` | Optional; seed (default) or publish |
@@ -47,7 +48,7 @@ Both manual modes run on the default branch and restore/save SQLite. Manual back
 
 The lookback is an inclusive rolling UTC window from run start minus X × 24 hours to run start. The bot uses the source-provided normalized posting timestamp (or an earlier known date on a matched alias), not the discovery time, employment start date or last-updated timestamp. Date-only values use midnight UTC. Missing, invalid, future and older dates are not backfilled; newly discovered out-of-window or undated jobs are recorded as seeded to avoid flooding the next poll. A wider later backfill can recover a still-eligible, dated seed record.
 
-Already sent or quarantined jobs are not requeued. Each run observes the live source snapshots rather than recovering historical closed postings. Previously pending jobs outside the window stay pending for normal polling; the current backfill delivery pass selects only pending jobs dated inside the window. The normal 25-message default delivery cap applies; queued jobs can drain on subsequent normal polls. Because normal polling has no age restriction, its previously queued or newly discovered jobs can include older or undated postings.
+Already sent or quarantined jobs are not requeued. Each run observes the live source snapshots rather than recovering historical closed postings. Previously pending jobs outside the window stay pending for normal polling; the current backfill delivery pass selects only pending jobs dated inside the window. The normal 25-message default delivery cap applies per enabled discipline; queued jobs can drain on subsequent normal polls. Because normal polling has no age restriction, its previously queued or newly discovered jobs can include older or undated postings.
 
 Date coverage varies by source. Greenhouse's existing adapter does not expose a posting date (an update timestamp is not a publication date); some community lists have no full publication date. Lever's creation timestamp and other providers' published/released dates are the available source signals and may differ from an original publication date. Unknown dates are skipped rather than guessed; this is a safety limit, not a guarantee of complete historical coverage.
 
@@ -58,7 +59,7 @@ Set these optional **repository Actions variables** in Settings:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FIRST_RUN_MODE` | `seed` | Use `publish` to queue existing matches for newly initialized sources |
-| `MAX_NOTIFICATIONS_PER_RUN` | `25` | Maximum job notifications per poll (1–500) |
+| `MAX_NOTIFICATIONS_PER_RUN` | `25` | Maximum job notifications per discipline per poll (1–500) |
 
 Source changes are made in the versioned [configuration files](sources.md). The workflow does not automatically forward other local environment variables.
 
@@ -93,11 +94,12 @@ The named volume `job-data` persists SQLite under `/app/data`. Keep `DATABASE_PA
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DISCORD_WEBHOOK_URL` | Required for delivery | Discord webhook secret |
+| `DISCORD_WEBHOOK_URL` | Required for delivery | SWE webhook secret |
+| `DISCORD_MECHANICAL_WEBHOOK_URL` | Unset (disabled) | Mechanical webhook secret |
 | `DATABASE_PATH` | `./data/jobs.db` | SQLite path; the shared hosted entrypoint uses a temporary path |
 | `POLL_INTERVAL_MINUTES` | `120` | Long-running poll interval, 1–1440 |
 | `FIRST_RUN_MODE` | `seed` | `seed` or `publish` |
-| `MAX_NOTIFICATIONS_PER_RUN` | `25` | Delivery cap, 1–500 |
+| `MAX_NOTIFICATIONS_PER_RUN` | `25` | Delivery cap per discipline, 1–500 |
 | `SIMPLIFY_ENABLED` | `true` | Enable SimplifyJobs |
 | `SIMPLIFY_URL` | Upstream JSON URL | Override SimplifyJobs feed |
 | `BOARDS_PATH` | `./config/boards.json` | Greenhouse, Lever and Ashby boards |
@@ -129,7 +131,7 @@ Do not delete, force-update or manually edit `bot-state`. If restore fails, the 
 
 In a public repository, this branch and its history are public. It contains posting metadata and Discord message IDs, not webhook credentials or full descriptions from the current ingestion pipeline. Do not upload a pre-existing local database that contains private or restricted data. Use a private repository or a private state store if necessary. Preview logs are also public.
 
-Normalized posting fields are bounded before persistence. Discord payloads show the destination hostname and accept only HTTPS application links. Local validation, HTTP 413, and Discord payload error codes `40005` or `50035` identify a permanently invalid job payload; the job is recorded in `delivery_rejections` and later queued jobs continue. Other failures—including forum/media destination error `220001`—remain pending and stop the current delivery pass so transient outages and webhook, permission, channel or thread configuration problems can be fixed without losing notifications.
+Normalized posting fields are bounded before persistence. Discord payloads show the destination hostname and accept only HTTPS application links. Local validation, HTTP 413, and Discord payload error codes `40005` or `50035` identify a permanently invalid job payload; the job is recorded in `delivery_rejections` and later queued jobs continue. Other failures—including forum/media destination error `220001`—remain pending and stop delivery only for the affected discipline so transient outages and webhook, permission, channel or thread configuration problems can be fixed without losing notifications.
 
 ## Poll outcomes
 
@@ -158,3 +160,7 @@ In [the Nov 17, 2026 production run](https://github.com/thomastran117/discord-wo
 ## Optional /ask service
 
 Deploy a separate always-running Railway service from the same Dockerfile with start command `npm run start:ask`, no cron, public HTTPS networking, and healthcheck `/health`. Do not reuse the poller's secrets. See [interactive search deployment](ask.md).
+
+## Mechanical engineering feed
+
+Create a second channel webhook and set `DISCORD_MECHANICAL_WEBHOOK_URL` on the Railway poller and in Actions secrets. No database reset or new cron service is needed. An unset secret disables mechanical ingestion and delivery (existing records stay intact); previews include both categories. Normal first-run seeding applies independently to mechanical source matches, so use bounded backfill to publish recent dated jobs. Existing records without a category remain SWE, and previously recorded identities are not moved or replayed across channels. Run `npm run test:webhook -- --mechanical` locally for a labelled fictional mechanical card. A failed destination leaves its queue pending while the other can continue; the overall poll still reports a delivery failure. The `/ask` service requires no webhook secrets; redeploy and re-register the updated command to use its category option.
