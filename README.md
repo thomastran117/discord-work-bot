@@ -4,12 +4,12 @@
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933)
 ![License](https://img.shields.io/github/license/thomastran117/discord-work-bot)
 
-A lightweight job aggregator that finds Canadian new-grad and early-career software engineering opportunities and posts them to a Discord channel. Runs every two hours as a Railway cron job, with manual polling/backfill in GitHub Actions and no dedicated database.
+A lightweight job aggregator that finds Canadian new-grad and early-career software and mechanical engineering opportunities and posts them to separate Discord channels. Runs every two hours as a Railway cron job, with manual polling/backfill in GitHub Actions and no dedicated database.
 
 ## Features
 
-- 17 configured sources, including SimplifyJobs and direct employer career boards.
-- Canadian location and early-career SWE filtering.
+- 17 existing sources plus two mechanical-focused employer boards, including SimplifyJobs and direct employer career boards.
+- Canadian location and early-career discipline filtering (SWE and optional mechanical).
 - Clickable Discord job cards with employer, title, location and source.
 - Persistent SQLite deduplication, rate-limit-aware source retries and retryable notification delivery.
 - Scheduled or manual polling, and bounded 1–30 day backfill.
@@ -26,9 +26,9 @@ A lightweight job aggregator that finds Canadian new-grad and early-career softw
 
 ### GitHub Actions (manual fallback)
 
-Add `DISCORD_WEBHOOK_URL` as a repository Actions secret. Under **Actions → Canadian new-grad job bot → Run workflow**, select `poll` or `backfill` (1–30 days, default 7). Both execution hosts share the existing state and an exclusive lock. Do not run legacy workflow revisions that bypass the lock.
+Add `DISCORD_WEBHOOK_URL` as a repository Actions secret. To enable the mechanical feed, also set `DISCORD_MECHANICAL_WEBHOOK_URL` in Actions secrets and the Railway poller variables. Under **Actions → Canadian new-grad job bot → Run workflow**, select `poll` or `backfill` (1–30 days, default 7). Both execution hosts share the existing state and an exclusive lock. Do not run legacy workflow revisions that bypass the lock.
 
-First normal polls seed existing listings by default; subsequent polls send new jobs. Backfill queues recent dated postings not previously sent.
+First normal polls seed existing listings per source and discipline by default; subsequent polls send new jobs. Backfill queues recent dated postings not previously sent.
 
 > In a public repository, the `bot-state` branch and workflow logs are public. Never commit secrets or delete the state branch.
 
