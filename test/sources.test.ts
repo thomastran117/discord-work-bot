@@ -10,8 +10,8 @@ import { getText } from "../src/utils/http.ts";
 test("default watchlist has distinct employers and optional curated feeds are off", () => {
   const config = loadConfig({});
   assert.equal(config.simplifyEnabled, true);
-  assert.equal(config.boards.length, 16);
-  assert.equal(new Set(config.boards.map(b => b.provider + ":" + b.board)).size, 16);
+  assert.equal(config.boards.length, 17);
+  assert.equal(new Set(config.boards.map(b => b.provider + ":" + b.board)).size, 17);
   assert.equal(config.boards.filter(b => b.mechanicalFocus).length, 5);
   assert.equal(loadConfig({MECHANICAL_FIRST_RUN_MODE:'publish'}).mechanicalSeedFirst, false);
   assert.equal(loadConfig({MECHANICAL_FIRST_RUN_MODE:'publish'}).seedFirst, true);

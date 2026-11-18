@@ -2,21 +2,21 @@
 
 [Back to README](../README.md)
 
-The default configuration contains 17 sources: SimplifyJobs, 11 public ATS employer boards and five direct employer career sites. With the mechanical webhook enabled, AECOM, CIMA+, LAPORTE, Promise Robotics, Elk Valley Resources, DIALOG and Systemex are also polled (24 default sources). There are three optional curated adapters (27 supported in total). These are configuration counts, not a guarantee that every integration is reachable or has current vacancies.
+The default configuration contains 18 sources: SimplifyJobs, 12 public ATS employer boards and five direct employer career sites. With the mechanical webhook enabled, AECOM, CIMA+, LAPORTE, Promise Robotics, Elk Valley Resources, DIALOG and Systemex are also polled (25 default sources). There are three optional curated adapters (28 supported in total). These are configuration counts, not a guarantee that every integration is reachable or has current vacancies.
 
 ## Default sources
 
 | Provider | Employers / feed |
 | --- | --- |
 | SimplifyJobs | [New-Grad Positions / Coder Quad](https://github.com/SimplifyJobs/New-Grad-Positions) |
-| [Greenhouse](https://developers.greenhouse.io/job-board.html) | Affirm, DoorDash Canada board, Faire, Robinhood; [LAPORTE](https://job-boards.greenhouse.io/englishcanada) (mechanical opt-in) |
+| [Greenhouse](https://developers.greenhouse.io/job-board.html) | Affirm, DoorDash Canada board, Faire, Robinhood, Stripe; [LAPORTE](https://job-boards.greenhouse.io/englishcanada) (mechanical opt-in) |
 | [Ashby](https://developers.ashbyhq.com/docs/public-job-posting-api) | Cerebras, Cohere, Wealthsimple, Zip |
 | [Lever](https://github.com/lever/postings-api) | Achievers, Apply Digital, Waabi; [Promise Robotics](https://jobs.lever.co/promiserobotics), [Elk Valley Resources](https://jobs.lever.co/evr), [DIALOG](https://jobs.lever.co/dialogdesign), [Systemex](https://jobs.lever.co/systemex) (mechanical opt-in) |
 | Workday | [Ciena](https://ciena.wd5.myworkdayjobs.com/Careers), [RBC](https://rbc.wd3.myworkdayjobs.com/RBCGLOBAL1), [Autodesk](https://autodesk.wd1.myworkdayjobs.com/Ext) |
 | Oracle Recruiting Cloud | [Nokia](https://jobs.nokia.com/en/sites/CX_1/jobs) |
 | [SmartRecruiters](https://developers.smartrecruiters.com/docs/endpoints) | [SAP](https://jobs.sap.com/en/jobs/) |
 
-SimplifyJobs is read from the upstream public JSON feed. The ATS integrations use public job-board endpoints, not browsing or login automation. Source requests must use HTTPS and do not follow redirects. Upstream schemas, job availability, and access policies can change.
+SimplifyJobs is read from the upstream public JSON feed, not the Simplify dashboard. The feed is filtered locally by Canadian geography; explicit inactive/hidden rows are excluded, while active rows with absent visibility metadata remain eligible. The `simplify_discovery` event shows raw/status/location counts before classification, with date-window breakdowns logged by the aggregator. Dashboard-only jobs may be absent from this feed. Stripe is also polled through its public Greenhouse board. Greenhouse uses `first_published` when supplied; missing dates remain unknown and `updated_at` is never used as a publication date. The ATS integrations use public job-board endpoints, not browsing or login automation. Source requests must use HTTPS and do not follow redirects. Upstream schemas, job availability, and access policies can change.
 
 ### Configure public ATS boards
 

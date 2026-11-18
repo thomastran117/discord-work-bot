@@ -20,6 +20,11 @@
     "board": "robinhood"
   },
   {
+    "provider": "greenhouse",
+    "company": "Stripe",
+    "board": "stripe"
+  },
+  {
     "provider": "ashby",
     "company": "Cerebras",
     "board": "cerebras"
