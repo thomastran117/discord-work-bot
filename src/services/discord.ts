@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Job } from "../models/job.ts";
+import type { Job, JobCategory } from "../models/job.ts";
 import { normalizeJob } from "./identity.ts";
 import { PermanentDeliveryError } from "./delivery.ts";
 
@@ -53,7 +53,7 @@ export function buildPayload(job: Job) {
       author: { name: safe.company },
       title: escapeMarkdown(safe.title).slice(0, 256),
       url: safe.url,
-      color: ACCENT,
+      color: safe.category === "mechanical" ? 0x0f9d86 : ACCENT,
       fields: [
         {
           name: locations.length > 1 ? "📍 Locations" : "📍 Location",
@@ -82,13 +82,14 @@ export async function publishJob(webhook: URL, job: Job, request = fetch): Promi
   return executeWebhook(webhook, payload, request);
 }
 
-export function testWebhook(webhook: URL, request = fetch): Promise<string> {
+export function testWebhook(webhook: URL, request = fetch, category: JobCategory = "swe"): Promise<string> {
   return executeWebhook(webhook, {
     ...buildPayload({
       source: "preview",
       externalId: "preview-card",
       company: "Example Technologies",
-      title: "Sample — Software Engineer, New Grad",
+      category,
+      title: category === "mechanical" ? "Sample — Mechanical Engineer, New Grad" : "Sample — Software Engineer, New Grad",
       locations: ["Toronto, ON", "Waterloo, ON"],
       url: "https://example.com/"
     }),
