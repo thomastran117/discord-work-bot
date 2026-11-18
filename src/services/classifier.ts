@@ -8,7 +8,7 @@ const role = /\b(?:software|backend|back[- ]end|frontend|front[- ]end|full[- ]st
 const mechanical = /\b(?:mechanical|electro[- ]?mechanical|electrom[eé]canique|mechatronics|m[eé]catronique|manufacturing|fabrication|industrial|automotive|aerospace|a[eé]rospatiale|aeronautical|thermal|hvac|cvac|refrigeration|r[eé]frig[eé]ration|tooling|m[eé]canique)\b/i;
 const adjacent = /\b(?:robotics|robotique|product design|design|process|quality|controls?|test|validation|maintenance|stress|piping|commissioning|fire protection|building services|systems assurance|rams)\b/i;
 const engineering = /\b(?:engineer(?:ing)?|eng\.?|designer|eit|e\.i\.t\.?|ing\.?|ing[eé]nieur(?:e)?|g[eé]nie|concepteur(?:rice)?|cpi)\b/i;
-const software = /\b(?:software|firmware|swe|sde|developer|programmer|logiciel|devops|sre)\b/i;
+const software = /\b(?:software|firmware|swe|sde|developer|programmer|logiciel|devops|sre|backend|back[- ]end|frontend|front[- ]end|full[- ]stack|machine learning|data engineer|site reliability|cloud engineer)\b/i;
 const degree = /\b(?:mechanical|mechatronics|manufacturing|aerospace|aeronautical|industrial) engineering\b|g[eé]nie (?:m[eé]canique|industriel|a[eé]rospatial)/i;
 const unrelated = /\b(?:civil|structural|geotechnical|environmental|electrical|chemical|mining|geological)\b/i;
 export function hasMechanicalEarlyTitle(title: string): boolean {
@@ -31,13 +31,13 @@ export function isCanadian(location: string): boolean {
 
 // Parse the entire range so "1–3 years" is not interpreted as a 3-year minimum.
 function experienceMinimums(description: string): number[] {
-  return [...description.matchAll(/\b(\d+)(?:\s*(?:[-–—]|to|[àa])\s*\d+)?\s*\+?\s*(?:years?|ans?|ann[eé]es?)\s*(?:['’]\s*|(?:of|d['’])\s*)?(?:[\p{L}-]+\s+){0,4}(?:experience|exp[eé]rience)\b/giu)].map(m => Number(m[1]));
+  return [...description.matchAll(/\b(\d+)(?:\s*(?:[-–—]|to|[àa])\s*\d+)?\s*\+?\s*(?:years?|yrs?|ans?|ann[eé]es?)\s*(?:['’]\s*|(?:of|d['’])\s*)?(?:[\p{L}-]+\s+){0,4}(?:experience|exp[eé]rience)\b/giu)].map(m => Number(m[1]));
 }
 export type MechanicalAssessment = "matched" | "not_candidate" | "location" | "seniority_or_employment" | "discipline_evidence" | "experience" | "early_career_evidence";
 export function assessMechanical(job: Job): MechanicalAssessment {
   if (!isMechanicalCandidate(job.title)) return "not_candidate";
   if (!job.locations.some(isCanadian)) return "location";
-  if (exclusion.test(job.title) || /\b(?:intermediate|experienced|exp[eé]riment[eé]e?|confirm[eé]e?|technicien|technologist)\b/i.test(job.title) ||
+  if (exclusion.test(job.title) || /\b(?:intermediate|s[eé]nior|talent pool|experienced|exp[eé]riment[eé]e?|confirm[eé]e?|technicien|technologist)\b/i.test(job.title) ||
       /\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance|stagiaire)\b/i.test((job.employmentType ?? "") + " " + job.title)) return "seniority_or_employment";
   const description = job.description ?? "";
   if (!mechanical.test(job.title) && !degree.test(description)) return "discipline_evidence";
