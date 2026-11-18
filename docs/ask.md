@@ -1,6 +1,6 @@
 # Interactive search (/ask)
 
-Railway cron and manual GitHub Actions use the same exclusive writer lock. On save it exports the last 30 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
+Railway cron and manual GitHub Actions use the same exclusive writer lock. On save it exports the last 60 days of public job metadata to jobs.json alongside jobs.db in the bot-state branch, atomically. It includes seeded, pending and sent jobs; delivery is independent of search. No descriptions, Discord message IDs or secrets are exported. An old state branch is automatically upgraded on the next successful save, even if no jobs change.
 
 ## Deployment on Railway
 
@@ -41,7 +41,7 @@ For local endpoint development, add DISCORD_PUBLIC_KEY and JOBS_SNAPSHOT_URL to 
 | /ask company:Ciena location:Ottawa days:7 | Combined filters |
 | /ask company:SAP page:2 | Next page of the same search |
 
-All five fields (company, location, days, page, category) are optional Discord slash-command options. Free-form questions are not accepted. Default is 30 rolling 24-hour days; allowed range 1–30. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the same filters and the next page number.
+All five fields (company, location, days, page, category) are optional Discord slash-command options. Free-form questions are not accepted. Default is 30 rolling 24-hour days; allowed range 1–60. Results are private (ephemeral), newest first, five per page, with direct application links. Repeat the search with the same filters and the next page number.
 
 Company and location are limited to 100 characters. Matching ignores case, accents and punctuation; direct partial matches and supported aliases take precedence. If no direct match exists for a field within the selected date range, the closest fuzzy matches are used (one edit for 4–7 characters, up to two for eight or more, including adjacent letter swaps). Short acronyms and province codes are matched directly, not fuzzily. Examples: Nokai → Nokia, Ottwa → Ottawa, Autodsk → Autodesk. Aliases include RBC / Royal Bank of Canada and Canadian province/territory abbreviations. Combined filters must both match; fuzzy matches are labelled in the response. Location matching is textual, not geocoding, and approximations can be ambiguous.
 
@@ -54,3 +54,5 @@ Publication dates are used where available. Undated jobs are included by first d
 - The snapshot is public, like the existing bot-state branch. Private repositories are not supported by this deployment. Search uses a bounded index, not a managed database. Git retains old snapshots in branch history.
 - If registration succeeds but no results appear, check the index and the poll logs; the first saved poll after merge creates the index. A new source may not have historical data. If Discord rejects the endpoint, verify the key and URL.
 - Railway and Discord configuration must be completed by an operator. The service remains running so hosting usage is continuous; Railway plan quotas apply. It acknowledges commands before fetching and bounds request bodies, concurrent deferred searches and upstream timeouts. Healthchecks test HTTP availability, not upstream index freshness.
+
+The maximum lookback is 60 days; `/ask` still defaults to 30. After deploying a new command schema, re-run the registration command documented above so Discord accepts values up to 60. The next successful state save refreshes the search snapshot.

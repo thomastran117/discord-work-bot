@@ -15,16 +15,20 @@ const make = (id: string, postedAt?: string): Job => ({
 });
 const source = (jobs: Job[]): JobSource => ({ name: "alpha", async fetchJobs() { return jobs; } });
 
-test("CLI defaults to seven days and rejects all values outside integer 1–30", () => {
+test("CLI defaults to seven days and rejects all values outside integer 1–60", () => {
   assert.equal(backfillFromArgs([]), undefined);
   assert.equal(backfillFromArgs(["--backfill"])?.days, 7);
   assert.equal(backfillFromArgs(["--backfill", "1"])?.days, 1);
   assert.equal(backfillFromArgs(["--backfill", "30"])?.days, 30);
-  for (const invalid of ["0", "31", "-5", "1.5", "NaN", "Infinity", "", "1e1", " 7", "7 "]) {
-    assert.throws(() => parseBackfillDays(invalid), /1 to 30/);
-    assert.throws(() => backfillFromArgs(["--backfill", invalid]), /1 to 30/);
+  assert.equal(backfillFromArgs(["--backfill", "31"])?.days, 31);
+  assert.equal(backfillFromArgs(["--backfill", "60"])?.days, 60);
+  assert.equal(withinBackfill(at(60), backfillWindow(60,now)), true);
+  assert.equal(withinBackfill(at(61), backfillWindow(60,now)), false);
+  for (const invalid of ["0", "61", "-5", "1.5", "NaN", "Infinity", "", "1e1", " 7", "7 "]) {
+    assert.throws(() => parseBackfillDays(invalid), /1 to 60/);
+    assert.throws(() => backfillFromArgs(["--backfill", invalid]), /1 to 60/);
   }
-  assert.throws(() => backfillWindow(31));
+  assert.throws(() => backfillWindow(61));
   assert.throws(() => backfillFromArgs(["--backfill","7","30"]));
   assert.throws(() => backfillFromArgs(["--dry-run","--backfill","7"]));
 });
@@ -87,13 +91,15 @@ test("backfill delivery excludes previously pending jobs outside window and hono
 });
 test("a wider allowed backfill can recover an older seed without replaying sent jobs", async () => {
   const db=new JobsRepository(":memory:");
-  const older=make("older",at(20)),recent=make("recent",at(1));
+  const older=make("older",at(45)),recent=make("recent",at(1)),tooOld=make("too-old",at(61));
   const sent:string[]=[];
   try {
     const options={repository:db,seedFirst:true,backfill:window,maxNotifications:25,
       publish:async(job:Job)=>{sent.push(job.externalId);return "42";}};
-    await runAggregation([source([older,recent])],options);
-    await runAggregation([source([older,recent])],{...options,backfill:backfillWindow(30,now)});
+    await runAggregation([source([older,recent,tooOld])],{...options,backfill:backfillWindow(30,now)});
+    await runAggregation([source([older,recent,tooOld])],{...options,backfill:backfillWindow(60,now)});
     assert.deepEqual(sent,["recent","older"]);
+    assert.equal(db.counts().seeded,1);
+    assert.equal((await runAggregation([source([older,recent,tooOld])],{...options,backfill:backfillWindow(60,now)})).delivered,0);
   } finally {db.close();}
 });

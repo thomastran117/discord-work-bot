@@ -5,11 +5,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mode="${1:-poll}"
 days="${2:-7}"
 if [[ "$mode" != poll && "$mode" != backfill ]] || [[ $# -gt 2 ]]; then
-  echo "Usage: bash scripts/run-job.sh [poll|backfill [1-30]]" >&2
+  echo "Usage: bash scripts/run-job.sh [poll|backfill [1-60]]" >&2
   exit 2
 fi
-if [[ "$mode" == backfill && ! "$days" =~ ^([1-9]|[12][0-9]|30)$ ]]; then
-  echo "Backfill days must be a whole number from 1 to 30." >&2
+if [[ "$mode" == backfill && ! "$days" =~ ^([1-9]|[1-5][0-9]|60)$ ]]; then
+  echo "Backfill days must be a whole number from 1 to 60." >&2
   exit 2
 fi
 : "${DISCORD_WEBHOOK_URL:?DISCORD_WEBHOOK_URL is required}"

@@ -8,9 +8,9 @@ const role = /\b(?:software|backend|back[- ]end|frontend|front[- ]end|full[- ]st
 // Include closely related technical roles, rather than requiring the exact
 // words "software engineer". Generic developer/programmer titles still need
 // early-career evidence; broad business/data analyst titles are not SWE.
-const relatedSoftware = /\b(?:software development|web developer|(?:java|python|javascript|typescript|react|angular|c\+\+|c#|\.net|full[- ]?stack|backend|frontend|front[- ]end|back[- ]end|mobile|android|ios|application|api|game|unity|unreal|salesforce)\s+(?:developer|programmer)|(?:developer|programmer)\s+(?:analyst|i|ii|1|2)|sdet|software development engineer in test|(?:test|qa|quality assurance)\s+automation (?:engineer|developer|specialist)|automation test (?:engineer|developer)|(?:data|machine learning|applied|research)\s+scientist|(?:ml|ai)\s+engineer|analytics engineer|(?:cybersecurity|cyber security)\s+engineer)\b/i;
+const relatedSoftware = /\b(?:software development (?:specialist|associate)|web developer|(?:java|python|javascript|typescript|react|angular|c\+\+|c#|\.net|full[- ]?stack|backend|frontend|front[- ]end|back[- ]end|mobile|android|ios|application|api|game|unity|unreal|salesforce)\s+(?:developer|programmer)|(?:developer|programmer)\s+(?:analyst|i|ii|1|2)|sdet|software development engineer in test|(?:test|qa|quality assurance)\s+automation (?:engineer|developer|specialist)|automation test (?:engineer|developer)|(?:data|machine learning|applied)\s+scientist|(?:ml|ai)\s+engineer|analytics engineer|(?:cybersecurity|cyber security)\s+engineer)\b/i;
 const softwareEvidence = /\b(?:software|programming|coding|software development|computer science|test automation|automated testing|python|java|javascript|typescript|sql|selenium|playwright|cypress|api testing)\b/i;
-const ambiguousSoftware = /\b(?:qa engineer|qa analyst|quality assurance engineer|quality assurance analyst|test automation engineer|test engineer|automation engineer|test analyst|data analyst|business intelligence developer)\b/i;
+const ambiguousSoftware = /\b(?:qa engineer|qa analyst|quality assurance engineer|quality assurance analyst|test automation engineer|test engineer|automation engineer|test analyst|data analyst|business intelligence developer|research scientist)\b/i;
 const genericDeveloper = /^(?:(?:junior|jr\.?|associate|graduate|entry[- ]level)\s+)?(?:developer|programmer)(?:\s*[-–—,]\s*.*|\s+(?:i|ii|1|2))?$/i;
 export function isSweCandidateTitle(title: string): boolean {
   return role.test(title) || relatedSoftware.test(title) || genericDeveloper.test(title) || ambiguousSoftware.test(title);
@@ -29,7 +29,7 @@ export function isMechanicalCandidate(title: string): boolean {
   if (mechanical.test(title)) return true;
   return !unrelated.test(title) && (adjacent.test(title) || hasMechanicalEarlyTitle(title));
 }
-const early = /\b(?:new[- ]grad(?:uate)?|recent graduate|university graduate|early[- ]career|entry[- ]level|junior|graduate (?:program|engineer|developer)|associate (?:software|engineer|developer)|(?:engineer|developer|programmer|sde|swe)\s+(?:i|1)|early in career|graduate software|graduate trainee|graduate program(?:me)?|campus (?:hire|graduate|undergraduate)|university hire|recent grad|jr\.?)\b|nouveau[x]? diplômé|débutant/i;
+const early = /\b(?:new[- ]grad(?:uate)?|recent graduate|university graduate|early[- ]career|entry[- ]level|junior|graduate (?:program|engineer|developer)|associate (?:software|engineer|developer)|(?:engineer|developer|programmer|sde|swe)\s+(?:i|1)|early in career|graduate software)\b|nouveau[x]? diplômé|débutant/i;
 // Level numbering varies by company. Level II can be explicitly early
 // career (e.g. Google's Software Developer 2 – Early Career).
 const hardExclusion = /\b(?:senior|staff|principal|manager|director|intern(?:ship)?|co[- ]?op|sr|lead|stagiaire|(?:engineer|developer|sde|swe)\s+(?:iii|iv|3|4)|mid[- ]level|intermediate)\b/i;
@@ -85,7 +85,8 @@ export function assessSwe(job: Job): SweAssessment {
   const minimums = experienceMinimums(description);
   const low = minimums.some(years => years <= 2);
   const high = minimums.some(years => years >= 3);
-  const earlyTitle = early.test(job.title);
+  const earlyTitle = early.test(job.title) || /^\s*graduate\b/i.test(job.title) ||
+    /\b(?:graduate trainee|graduate program(?:me)?|campus (?:hire|graduate|undergraduate)|university hire|recent grad|jr\.?)\b/i.test(job.title);
   // Level II remains conditional: explicit early-career title OR credible
   // 0–2-year description evidence, not the curated feed flag alone.
   if (levelTwo.test(job.title)) {
