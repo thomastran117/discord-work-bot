@@ -22,20 +22,22 @@ async function main() {
     return;
   }
   if (process.argv.includes("--test-webhook")) {
-    if (!process.env.DISCORD_WEBHOOK_URL) {
-      log("error", "webhook_test_failed", { error: "DISCORD_WEBHOOK_URL is required" });
+    const mechanical = process.argv.includes("--mechanical");
+    const secret = mechanical ? process.env.DISCORD_MECHANICAL_WEBHOOK_URL : process.env.DISCORD_WEBHOOK_URL;
+    if (!secret) {
+      log("error", "webhook_test_failed", { error: mechanical ? "DISCORD_MECHANICAL_WEBHOOK_URL is required" : "DISCORD_WEBHOOK_URL is required" });
       process.exitCode = 1;
       return;
     }
     let webhook: URL;
-    try { webhook = webhookUrl(process.env.DISCORD_WEBHOOK_URL); }
+    try { webhook = webhookUrl(secret); }
     catch {
       log("error", "webhook_test_failed", { error: "Invalid Discord webhook URL" });
       process.exitCode = 1;
       return;
     }
     try {
-      const messageId = await testWebhook(webhook);
+      const messageId = await testWebhook(webhook, fetch, mechanical ? "mechanical" : "swe");
       log("info", "webhook_test_confirmed", { messageId });
     } catch (error) {
       log("error", "webhook_test_failed", { error: error instanceof Error ? error.message : "Unknown Discord error" });
@@ -47,6 +49,11 @@ async function main() {
   const config = loadConfig();
   if (!dryRun && !config.webhook) throw new Error("DISCORD_WEBHOOK_URL is required (or use npm run preview)");
   const webhook = dryRun ? undefined : webhookUrl(config.webhook!);
+  const mechanicalWebhook = !dryRun && config.mechanicalWebhook ? webhookUrl(config.mechanicalWebhook) : undefined;
+  if (webhook && mechanicalWebhook && webhook.pathname.split("/")[3] === mechanicalWebhook.pathname.split("/")[3] &&
+      webhook.searchParams.get("thread_id") === mechanicalWebhook.searchParams.get("thread_id"))
+    throw new Error("Configure separate notification destinations");
+  const mechanicalEnabled = dryRun || Boolean(mechanicalWebhook);
   const repository = dryRun ? undefined : new JobsRepository(config.databasePath);
   const http = new SourceHttpClient({
     cooldowns: repository,
@@ -60,7 +67,11 @@ async function main() {
     repository?.close();
     throw new Error("Missing or duplicate source configuration");
   }
-  const options = { repository, publish: webhook ? (job: Parameters<typeof publishJob>[1]) => publishJob(webhook, job) : undefined,
+  const options = { repository, mechanicalEnabled, publish: webhook ? (job: Parameters<typeof publishJob>[1]) => {
+      const destination = job.category === "mechanical" ? mechanicalWebhook : webhook;
+      if (!destination) throw new Error("Mechanical webhook is not configured");
+      return publishJob(destination, job);
+    } : undefined,
     dryRun, backfill, maxNotifications: config.maxNotifications, seedFirst: config.seedFirst };
   if (once) {
     try {
