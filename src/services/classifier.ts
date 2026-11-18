@@ -20,7 +20,10 @@ export function isMechanicalCandidate(title: string): boolean {
   return !unrelated.test(title) && (adjacent.test(title) || hasMechanicalEarlyTitle(title));
 }
 const early = /\b(?:new[- ]grad(?:uate)?|recent graduate|university graduate|early[- ]career|entry[- ]level|junior|graduate (?:program|engineer|developer)|associate (?:software|engineer|developer)|(?:engineer|developer|programmer|sde|swe)\s+(?:i|1)|early in career|graduate software)\b|nouveau[x]? diplômé|débutant/i;
-const exclusion = /\b(?:senior|staff|principal|manager|director|intern(?:ship)?|co[- ]?op|sr|lead|stagiaire|(?:engineer|developer|sde|swe)\s+(?:ii|iii|iv|2|3|4)|mid[- ]level)\b/i;
+// Level numbering varies by company. Level II can be explicitly early
+// career (e.g. Google's Software Developer 2 – Early Career).
+const hardExclusion = /\b(?:senior|staff|principal|manager|director|intern(?:ship)?|co[- ]?op|sr|lead|stagiaire|(?:engineer|developer|sde|swe)\s+(?:iii|iv|3|4)|mid[- ]level|intermediate)\b/i;
+const levelTwo = /\b(?:engineer|developer|sde|swe)\s+(?:ii|2)\b/i;
 const descriptionEarly = /\b(?:new graduates?|recent graduates?|early[- ]career|entry[- ]level|[01]\s*(?:[-–—]|to)\s*[12]\s+years?|[01]\+?\s+years?\s+(?:of\s+)?(?:professional|relevant|software|work)\s+experience)\b/i;
 const experienceHigh = /\b(?:[3-9]|[1-9]\d)\+?\s+years?\s+(?:of\s+)?(?:professional|relevant|software|work|industry)\s+experience\b/i;
 
@@ -37,7 +40,7 @@ export type MechanicalAssessment = "matched" | "not_candidate" | "location" | "s
 export function assessMechanical(job: Job): MechanicalAssessment {
   if (!isMechanicalCandidate(job.title)) return "not_candidate";
   if (!job.locations.some(isCanadian)) return "location";
-  if (exclusion.test(job.title) || /\b(?:intermediate|s[eé]nior|talent pool|experienced|exp[eé]riment[eé]e?|confirm[eé]e?|technicien|technologist)\b/i.test(job.title) ||
+  if (hardExclusion.test(job.title) || levelTwo.test(job.title) || /\b(?:intermediate|s[eé]nior|talent pool|experienced|exp[eé]riment[eé]e?|confirm[eé]e?|technicien|technologist)\b/i.test(job.title) ||
       /\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance|stagiaire)\b/i.test((job.employmentType ?? "") + " " + job.title)) return "seniority_or_employment";
   const description = job.description ?? "";
   if (!mechanical.test(job.title) && !degree.test(description)) return "discipline_evidence";
@@ -51,7 +54,7 @@ export function assessMechanical(job: Job): MechanicalAssessment {
 }
 
 export function classifyJob(job: Job): JobCategory | undefined {
-  if (!job.locations.some(isCanadian) || exclusion.test(job.title)) return undefined;
+  if (!job.locations.some(isCanadian) || hardExclusion.test(job.title)) return undefined;
   if (/\b(?:intern(?:ship)?|co[- ]?op|part[- ]?time|contract|temporary|freelance)\b/i.test(job.employmentType ?? "")) return undefined;
   if (/\b(?:part[- ]time|contract|temporary)\b/i.test(job.title)) return undefined;
   const description = job.description ?? "";
@@ -60,6 +63,12 @@ export function classifyJob(job: Job): JobCategory | undefined {
   // Explicit mechanical titles must never fall through into the SWE channel.
   if (isMechanicalCandidate(job.title) && mechanical.test(job.title)) return undefined;
   if (!role.test(job.title)) return undefined;
+  // A curated feed's broad isNewGrad signal alone cannot override a level-II
+  // title. Require an explicit early-career title and no contradictory
+  // minimum experience requirement. Mechanical level II remains excluded.
+  if (levelTwo.test(job.title) &&
+      (!early.test(job.title) || experienceMinimums(description).some(years => years >= 3) ||
+        (isMechanicalCandidate(job.title) && !software.test(job.title) && degree.test(description)))) return undefined;
   return job.isNewGrad === true || early.test(job.title) ||
     (descriptionEarly.test(description) && !experienceHigh.test(description)) ? "swe" : undefined;
 }
