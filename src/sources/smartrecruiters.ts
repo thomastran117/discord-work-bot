@@ -27,7 +27,7 @@ function countryLocation(value: unknown): string | undefined {
   const location = record(value);
   // Require explicit structured Canadian country evidence even when API
   // filtering is requested; a region named CA can be California.
-  if (!/^(?:CA|CAN|Canada)$/i.test(str(location.country))) return undefined;
+  if (!/^(?:CA|CAN|Canada)$/i.test((str(location.country) || str(location.countryCode)))) return undefined;
   return [...new Set([str(location.city), str(location.region), "Canada"].filter(Boolean))].join(", ");
 }
 function titleSlug(title: string): string {
@@ -97,7 +97,7 @@ export async function fetchSmartRecruiters(board: SmartRecruitersBoard, http = n
   const seen = new Map<string, Job>();
   // Preserve the unfiltered pass for SWE and use documented q filters to
   // reach mechanical listings behind the general pagination cap.
-  const queries = mechanicalEnabled ? ["", "mechanical", "mécanique", "manufacturing", "mechatronics", "EIT", "graduate"] : [""];
+  const queries = mechanicalEnabled && board.id !== "sap" ? ["", "mechanical", "mécanique", "manufacturing", "mechatronics", "EIT", "graduate"] : [""];
   for (const query of queries) {
     let offset = 0, candidates = 0, total = 0;
     const pageLimit = query ? 3 : maxPages;
