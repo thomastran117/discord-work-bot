@@ -13,6 +13,7 @@ interface Options {
   publish?: (job: Job) => Promise<string>;
   seedFirst: boolean;
   mechanicalEnabled?: boolean;
+  mechanicalSeedFirst?: boolean;
   maxNotifications: number;
   dryRun?: boolean;
   backfill?: BackfillWindow;
@@ -68,7 +69,7 @@ export async function runAggregation(sources: JobSource[], options: Options) {
       // them reach the caller rather than converting them into a warning.
       for (const category of categories) {
         const group = jobs.filter(job => job.category === category);
-        const stats = options.repository!.ingest(category === "swe" ? source.name : "mechanical:" + source.name, group, options.seedFirst, options.backfill);
+        const stats = options.repository!.ingest(category === "swe" ? source.name : "mechanical:" + source.name, group, category === "mechanical" ? options.mechanicalSeedFirst ?? options.seedFirst : options.seedFirst, options.backfill);
         log("info", "source_complete", { source: source.name, category, fetched: raw.length, matched: group.length, invalid, ...stats });
       }
     }
