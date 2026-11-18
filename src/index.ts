@@ -62,7 +62,7 @@ async function main() {
   const sources = [...(config.simplifyEnabled ? [simplifySource(config.simplifyUrl, http)] : []),
     ...config.boards.map(board => atsSource(board, http)),
     ...config.feeds.map(id => curatedSource(id, http)),
-    ...config.careers.map(id => careerSource(id, http))];
+    ...config.careers.filter(id => mechanicalEnabled || (id !== "aecom" && id !== "cima")).map(id => careerSource(id, http, mechanicalEnabled))];
   if (!sources.length || new Set(sources.map(source => source.name)).size !== sources.length) {
     repository?.close();
     throw new Error("Missing or duplicate source configuration");
