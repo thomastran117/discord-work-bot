@@ -6,7 +6,7 @@ const now=Date.parse("2026-11-17T12:00:00Z");
 const firstSeenAt="2026-11-16T12:00:00.000Z";
 const job=(company:string,locations:string[],postedAt?:string)=>({company,title:"Engineer",locations,url:"https://example.com/"+encodeURIComponent(company),firstSeenAt,postedAt});
 test("structured command defaults and validation",()=>{
-  assert.deepEqual(askCommand.options.map(x=>x.name),["company","location","days","page"]);
+  assert.deepEqual(askCommand.options.map(x=>x.name),["company","location","days","page","category"]);
   assert.deepEqual(parseAsk({}),{company:undefined,location:undefined,days:30,page:1});
   assert.deepEqual(parseAsk({company:" RBC ",location:" Ottawa ",days:3,page:2}),{company:"RBC",location:"Ottawa",days:3,page:2});
   for(const days of [0,31,1.5,NaN]) assert.throws(()=>parseAsk({days}));
