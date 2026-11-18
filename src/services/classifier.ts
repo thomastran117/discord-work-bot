@@ -5,9 +5,9 @@ const cities = /\b(toronto|waterloo|kitchener|ottawa|vancouver|montr[eé]al|calg
 const provinceCodes = /(?:,\s*|\(\s*)(ON|QC|BC|AB|MB|SK|NS|NB|NL|PE|NT|NU|YT)(?=$|[\s,)])/i;
 const foreign = /\b(united states|usa|u\.s\.|california|washington|texas|new york|united kingdom|uk|australia|india)\b|,\s*(CA|WA|NY|TX|OR|MI|MA|OH|FL|IL|CO|VA|PA|NJ|MD|WI|MN|IN|NC|SC|GA|AZ|NV|CT|TN|MO|IA|ID|UT|NM|KS|OK|AR|LA|MS|AL|KY|NE|ND|SD|MT|WY|WV|VT|NH|ME|RI|DE|HI|AK)(?=$|[,\s)])/i;
 const role = /\b(?:software|backend|back[- ]end|frontend|front[- ]end|full[- ]stack|embedded|firmware|devops|sre|site reliability|platform|infrastructure|cloud|machine learning|data|security|distributed systems|systems|application|mobile|android|ios)\b.{0,35}\b(?:engineer(?:ing)?|developer|programmer)\b|\b(?:software developer|software engineer|swe|sde|devops|sre|développeur|développeuse|programmeur|ingénieur logiciel)\b/i;
-const mechanical = /\b(?:mechanical|electro[- ]?mechanical|electrom[eé]canique|mechatronics|m[eé]catronique|manufacturing|fabrication|industrial|automotive|aerospace|a[eé]rospatiale|aeronautical|thermal|hvac|cvac|tooling|m[eé]canique)\b/i;
+const mechanical = /\b(?:mechanical|electro[- ]?mechanical|electrom[eé]canique|mechatronics|m[eé]catronique|manufacturing|fabrication|industrial|automotive|aerospace|a[eé]rospatiale|aeronautical|thermal|hvac|cvac|refrigeration|r[eé]frig[eé]ration|tooling|m[eé]canique)\b/i;
 const adjacent = /\b(?:robotics|robotique|product design|design|process|quality|controls?|test|validation|maintenance|stress|piping|commissioning|fire protection|building services|systems assurance|rams)\b/i;
-const engineering = /\b(?:engineer(?:ing)?|eng\.?|designer|eit|ing\.?|ing[eé]nieur(?:e)?|g[eé]nie|concepteur(?:rice)?|cpi)\b/i;
+const engineering = /\b(?:engineer(?:ing)?|eng\.?|designer|eit|e\.i\.t\.?|ing\.?|ing[eé]nieur(?:e)?|g[eé]nie|concepteur(?:rice)?|cpi)\b/i;
 const software = /\b(?:software|firmware|swe|sde|developer|programmer|logiciel|devops|sre)\b/i;
 const degree = /\b(?:mechanical|mechatronics|manufacturing|aerospace|aeronautical|industrial) engineering\b|g[eé]nie (?:m[eé]canique|industriel|a[eé]rospatial)/i;
 const unrelated = /\b(?:civil|structural|geotechnical|environmental|electrical|chemical|mining|geological)\b/i;
